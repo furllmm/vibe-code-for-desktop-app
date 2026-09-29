@@ -15,6 +15,21 @@ def test_context_prefers_relevant_file(tmp_path: Path) -> None:
     assert pack.items[0].path.name == "login.py"
 
 
+def test_context_uses_symbol_relevance(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text(
+        "def authenticate_user():\n    return True\n", encoding="utf-8"
+    )
+    (tmp_path / "utils.py").write_text(
+        "def format_name(value):\n    return value\n", encoding="utf-8"
+    )
+    pack = ContextService().build(
+        ContextRequest("fix authenticate_user", tmp_path, 1000)
+    )
+    assert pack.items
+    assert pack.items[0].path.name == "auth.py"
+    assert "symbol:authenticate_user" in pack.items[0].reason
+
+
 def test_context_respects_budget(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("a" * 4000, encoding="utf-8")
     (tmp_path / "b.py").write_text("b" * 4000, encoding="utf-8")
