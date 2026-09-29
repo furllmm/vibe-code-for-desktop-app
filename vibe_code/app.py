@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import os
 import sys
 from pathlib import Path
@@ -139,7 +140,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Agent setup error: {exc}")
             return
 
-        self.output.append(f"<b>You:</b> {prompt}")
+        self.output.append(f"<b>You:</b> {html.escape(prompt)}")
         self.run_button.setEnabled(False)
         self.statusBar().showMessage("Agent is working…")
 
@@ -175,7 +176,7 @@ class MainWindow(QMainWindow):
         )
 
     def _agent_finished(self, result: AgentRunResult) -> None:
-        self.output.append(f"<b>Agent:</b> {result.content}")
+        self.output.append(f"<b>Agent:</b> {html.escape(result.content)}")
         if result.executions:
             lines = [
                 f"- {execution.name}: {'OK' if execution.result.ok else 'FAILED'}"
@@ -188,7 +189,7 @@ class MainWindow(QMainWindow):
         )
 
     def _agent_failed(self, message: str) -> None:
-        self.output.append(f"<b>Agent error:</b> {message}")
+        self.output.append(f"<b>Agent error:</b> {html.escape(message)}")
         self.statusBar().showMessage(f"Agent error: {message}")
 
     def _agent_thread_finished(self) -> None:
