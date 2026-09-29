@@ -91,3 +91,8 @@ python -m vibe_code
 The IDE provides **Run Preview** and **Stop Preview**. Preview stdout/stderr is captured and displayed in the chat output, and non-zero exits are reported as crash/error exits.
 
 The preview layer is adapter-based so language-specific detection/build/run behavior can be added without changing the IDE UI. The current generic adapter intentionally performs no automatic build.
+
+
+### Python/PySide6 preview
+
+If VIBE_CODE_PREVIEW_COMMAND is not set, the desktop shell can automatically detect a Python/PySide6 workspace and infer an entrypoint from main.py, app.py, src/main.py, src/app.py, or project.scripts.preview in pyproject.toml. An explicit entrypoint can be supplied with VIBE_CODE_PYTHON_ENTRYPOINT. The adapter keeps the entrypoint inside the workspace and runs it with the current Python interpreter.
