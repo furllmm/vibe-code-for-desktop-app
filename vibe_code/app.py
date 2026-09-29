@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self._change_manager: ChangeManager | None = None
         self._orchestrator: AgentOrchestrator | None = None
         self._last_failure: PreviewFailure | None = None
+        self._pending_recovery_failure: PreviewFailure | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -405,7 +406,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Preview recovered.")
         elif self._last_failure is not None:
             self.output.append("<b>Recovery:</b> repair limit reached; preview still crashes.")
-            self._handle_preview_failure(self._last_failure)
+            self._pending_recovery_failure = self._last_failure
         else:
             self.statusBar().showMessage("Recovery stopped without a preview result.")
 
@@ -458,6 +459,10 @@ class MainWindow(QMainWindow):
         self._thread = None
         self._worker = None
         self.run_button.setEnabled(True)
+        failure = self._pending_recovery_failure
+        self._pending_recovery_failure = None
+        if failure is not None:
+            QTimer.singleShot(0, lambda: self._handle_preview_failure(failure))
 
     def closeEvent(self, event) -> None:
         self.stop_preview()
