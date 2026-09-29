@@ -121,6 +121,7 @@ class AgentLoop:
                 AgentMessage(
                     role="assistant",
                     content=response.content or f"Requested tools: {calls_text}",
+                    tool_calls=response.tool_calls,
                 )
             )
 
