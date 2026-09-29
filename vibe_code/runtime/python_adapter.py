@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import sys
+import tomllib
 from typing import Sequence
 
 
@@ -23,11 +24,18 @@ class PythonPySide6Adapter:
             or any(workspace.glob("*.py"))
         ):
             return False
-        return self._has_pyside6_dependency(workspace) or any(
-            self._looks_like_pyside6(path)
-            for path in workspace.rglob("*.py")
-            if ".venv" not in path.parts and "venv" not in path.parts
-        )
+        if self._has_pyside6_dependency(workspace):
+            return True
+        checked = 0
+        for path in workspace.rglob("*.py"):
+            if ".venv" in path.parts or "venv" in path.parts or "node_modules" in path.parts:
+                continue
+            if self._looks_like_pyside6(path):
+                return True
+            checked += 1
+            if checked >= 1000:
+                break
+        return False
 
     def build(self, workspace: Path) -> None:
         """Python does not require a build step for the preview MVP."""
@@ -81,8 +89,6 @@ class PythonPySide6Adapter:
         if not path.is_file():
             return None
         try:
-            import tomllib
-
             data = tomllib.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, tomllib.TOMLDecodeError):
             return None
@@ -117,7 +123,6 @@ class PythonPySide6Adapter:
         pyproject = workspace / "pyproject.toml"
         if pyproject.is_file():
             try:
-                import tomllib
                 data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, tomllib.TOMLDecodeError):
                 data = {}
@@ -130,7 +135,7 @@ class PythonPySide6Adapter:
         return False
 
     @staticmethod
-    def _looks_like_pyside6(path: Path):
+    def _looks_like_pyside6(path: Path) -> bool:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
         except (OSError, SyntaxError):
