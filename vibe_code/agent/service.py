@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..context.models import ContextPack
-from ..providers.base import AgentMessage, AIProvider, ProviderResponse, ToolCall
+from ..providers.base import (
+    AgentMessage,
+    AIProvider,
+    ProviderRequest,
+    ProviderResponse,
+    ToolCall,
+)
 from ..tools.base import ToolResult
 from ..tools.registry import ToolRegistry
 
@@ -59,8 +65,18 @@ class AgentService:
         ]
 
     @classmethod
+    def build_provider_request(
+        cls,
+        request: AgentRequest,
+        tools: tuple,
+    ) -> ProviderRequest:
+        return ProviderRequest(cls.build_messages(request), tools)
+
+    @classmethod
     def complete(cls, provider: AIProvider, request: AgentRequest) -> str:
-        return provider.complete(cls.build_messages(request)).content
+        return provider.complete(
+            cls.build_provider_request(request, ())
+        ).content
 
 
 class AgentLoop:
@@ -81,10 +97,13 @@ class AgentLoop:
 
     def run(self, request: AgentRequest) -> AgentRunResult:
         messages = AgentService.build_messages(request)
+        tool_definitions = self.registry.definitions()
         executions: list[ToolExecution] = []
 
         for turn in range(1, self.max_turns + 1):
-            response: ProviderResponse = self.provider.complete(messages)
+            response: ProviderResponse = self.provider.complete(
+                ProviderRequest(messages, tool_definitions)
+            )
 
             if not response.tool_calls:
                 messages.append(AgentMessage(role="assistant", content=response.content))
