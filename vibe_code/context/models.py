@@ -12,6 +12,8 @@ class ContextItem:
     score: float
     reason: str
     content: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 @dataclass(frozen=True)
