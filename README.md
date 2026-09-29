@@ -96,3 +96,8 @@ The preview layer is adapter-based so language-specific detection/build/run beha
 ### Python/PySide6 preview
 
 If VIBE_CODE_PREVIEW_COMMAND is not set, the desktop shell can automatically detect a Python/PySide6 workspace and infer an entrypoint from main.py, app.py, src/main.py, src/app.py, or project.scripts.preview in pyproject.toml. An explicit entrypoint can be supplied with VIBE_CODE_PYTHON_ENTRYPOINT. The adapter keeps the entrypoint inside the workspace and runs it with the current Python interpreter.
+
+
+### Agent preview tools
+
+When a preview adapter is available, the coding agent receives an explicit allow-list of `run_preview`, `get_preview_logs`, and `stop_preview`. The agent is instructed to validate meaningful changes with the preview and inspect diagnostics before finishing. Preview process commands remain owned by the configured adapter rather than being supplied by the model.
