@@ -52,3 +52,28 @@ pytest
 ```
 
 Status: early foundation / active development.
+
+
+## Agent runner
+
+The desktop UI can run a bounded coding-agent loop against any **Chat Completions-compatible** endpoint.
+
+Configure the provider through environment variables:
+
+```bash
+export VIBE_CODE_BASE_URL="http://localhost:8000/v1"
+export VIBE_CODE_MODEL="your-model"
+export VIBE_CODE_API_KEY="optional"
+export VIBE_CODE_TIMEOUT="60"
+python -m vibe_code
+```
+
+Then open a workspace, describe a change, and press **Run Agent**.
+
+The current agent tool allow-list contains:
+- `read_file`
+- `write_file`
+
+Both are restricted to the selected workspace. Agent execution runs outside the Qt GUI thread so a slow provider request does not block the interface.
+
+The current provider adapter targets the Chat Completions contract; it does not claim compatibility with the separate Responses API.
