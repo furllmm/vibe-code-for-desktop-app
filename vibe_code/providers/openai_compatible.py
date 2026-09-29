@@ -79,6 +79,18 @@ class OpenAICompatibleProvider:
             result["name"] = message.name
         if message.tool_call_id:
             result["tool_call_id"] = message.tool_call_id
+        if message.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments),
+                    },
+                }
+                for call in message.tool_calls
+            ]
         return result
 
     @staticmethod
