@@ -103,9 +103,33 @@ class ContextService:
             score += 5
             reasons.append("project metadata")
 
-        return ContextItem(
-            path, "file", score, ", ".join(dict.fromkeys(reasons)) or "baseline candidate", text
+        matched_symbols = () if indexed is None else tuple(
+            symbol for symbol in indexed.symbols
+            if any(term in symbol.name.lower() for term in terms)
+            and symbol.end_line is not None
         )
+        start_line = None
+        end_line = None
+        if matched_symbols:
+            start_line = min(symbol.line for symbol in matched_symbols)
+            end_line = max(symbol.end_line or symbol.line for symbol in matched_symbols)
+            text = self._slice_lines(text, start_line, end_line)
+            reasons.append(f"symbol-range:{start_line}-{end_line}")
+
+        return ContextItem(
+            path,
+            "file",
+            score,
+            ", ".join(dict.fromkeys(reasons)) or "baseline candidate",
+            text,
+            start_line,
+            end_line,
+        )
+
+    @staticmethod
+    def _slice_lines(text: str, start_line: int, end_line: int) -> str:
+        lines = text.splitlines(keepends=True)
+        return "".join(lines[max(0, start_line - 1):end_line])
 
     @staticmethod
     def _read(path: Path) -> str:
