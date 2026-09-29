@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
-from .process import ProcessManager
+from .process import ProcessManager, ProcessResult
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,10 @@ class PreviewEngine:
         self.adapter = adapter
         self.process = ProcessManager(self.workspace)
 
+    @property
+    def running(self) -> bool:
+        return self.process.running
+
     def build(self) -> None:
         if not self.adapter.detect(self.workspace):
             raise RuntimeError("preview adapter does not support this workspace")
@@ -61,10 +65,10 @@ class PreviewEngine:
         self.stop()
         self.start()
 
-    def stop(self) -> None:
-        self.process.stop()
+    def stop(self) -> ProcessResult | None:
+        return self.process.stop()
 
-    def poll(self):
+    def poll(self) -> ProcessResult | None:
         return self.process.poll()
 
     def read_logs(self) -> str:
