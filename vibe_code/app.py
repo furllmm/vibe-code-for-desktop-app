@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTextEdit,
     QToolBar,
+    QTabWidget,
+    QMessageBox,
     QTreeWidget,
     QTreeWidgetItem,
 )
@@ -36,6 +38,7 @@ from vibe_code.tools.workspace_tools import ReadFileTool, WriteFileTool
 from vibe_code.tools.preview_tools import GetPreviewLogsTool, RunPreviewTool, StopPreviewTool
 from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.changes import ChangeManager
+from vibe_code.changes.panel import ChangePanel
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
 
@@ -50,6 +53,7 @@ class MainWindow(QMainWindow):
         self._thread: QThread | None = None
         self._worker: AgentWorker | None = None
         self._preview: PreviewEngine | None = None
+        self._change_manager: ChangeManager | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -91,10 +95,13 @@ class MainWindow(QMainWindow):
         chat_splitter.setSizes([480, 180, 48])
 
         self.context_panel = ContextPanel()
+        self.change_panel: ChangePanel | None = None
 
         splitter.addWidget(self.project_tree)
         splitter.addWidget(chat_splitter)
-        splitter.addWidget(self.context_panel)
+        self.right_tabs = QTabWidget()
+        self.right_tabs.addTab(self.context_panel, "Context")
+        splitter.addWidget(self.right_tabs)
         splitter.setSizes([260, 620, 400])
         self.setCentralWidget(splitter)
         self.statusBar().showMessage("Ready — open a workspace")
@@ -213,6 +220,12 @@ class MainWindow(QMainWindow):
             provider = self._build_provider()
             filesystem = WorkspaceFS(self.workspace.root)
             changes = ChangeManager(filesystem)
+            self._change_manager = changes
+            if self.change_panel is None:
+                self.change_panel = ChangePanel(changes)
+                self.change_panel.rollback_requested.connect(self._rollback_change)
+                self.right_tabs.addTab(self.change_panel, "Changes")
+            self.change_panel.refresh()
             tools = [
                 ReadFileTool(filesystem),
                 WriteFileTool(filesystem, changes),
@@ -286,6 +299,8 @@ class MainWindow(QMainWindow):
 
     def _agent_finished(self, result: AgentRunResult) -> None:
         self.output.append(f"<b>Agent:</b> {html.escape(result.content)}")
+        if self.change_panel is not None:
+            self.change_panel.refresh()
         if result.executions:
             lines = [
                 f"- {execution.name}: {'OK' if execution.result.ok else 'FAILED'}"
@@ -296,6 +311,29 @@ class MainWindow(QMainWindow):
             f"Agent finished in {result.turns} turn(s)"
             + (" — turn limit reached" if result.stopped_by_limit else "")
         )
+
+    def _rollback_change(self, change_id: str) -> None:
+        if self._change_manager is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Revert change?",
+            f"Revert change {change_id[:12]}? This restores the recorded file state.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            change_set = self._change_manager.rollback(change_id)
+        except (OSError, KeyError, PermissionError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Rollback failed", str(exc))
+            return
+        paths = ", ".join(item.path for item in change_set.changes)
+        self.output.append(f"<b>Reverted:</b> {html.escape(paths)}")
+        if self.workspace is not None:
+            self.load_workspace(self.workspace.root)
+            self.refresh_context()
+        if self.change_panel is not None:
+            self.change_panel.refresh()
 
     def _agent_failed(self, message: str) -> None:
         self.output.append(f"<b>Agent error:</b> {html.escape(message)}")
