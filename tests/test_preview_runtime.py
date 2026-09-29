@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 from vibe_code.runtime.preview import GenericPreviewAdapter, PreviewConfig, PreviewEngine
 from vibe_code.runtime.process import ProcessManager
@@ -12,6 +13,7 @@ def test_process_manager_captures_output_and_exit(tmp_path: Path) -> None:
         result = manager.poll()
         if result is not None:
             break
+        time.sleep(0.01)
     assert result is not None
     assert result.returncode == 0
     assert not result.crashed
