@@ -10,7 +10,7 @@ from ..providers.base import (
     ProviderResponse,
     ToolCall,
 )
-from ..tools.base import ToolResult
+from ..tools.base import ToolDefinition, ToolResult
 from ..tools.registry import ToolRegistry
 
 
@@ -68,7 +68,7 @@ class AgentService:
     def build_provider_request(
         cls,
         request: AgentRequest,
-        tools: tuple,
+        tools: tuple[ToolDefinition, ...],
     ) -> ProviderRequest:
         return ProviderRequest(cls.build_messages(request), tools)
 
