@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -16,13 +15,18 @@ class PythonPySide6Adapter:
         self.entrypoint = entrypoint
 
     def detect(self, workspace: Path) -> bool:
-        return (
-            workspace.is_dir()
-            and (
-                (workspace / "pyproject.toml").is_file()
-                or (workspace / "requirements.txt").is_file()
-                or any(workspace.glob("*.py"))
-            )
+        if not workspace.is_dir():
+            return False
+        if not (
+            (workspace / "pyproject.toml").is_file()
+            or (workspace / "requirements.txt").is_file()
+            or any(workspace.glob("*.py"))
+        ):
+            return False
+        return self._has_pyside6_dependency(workspace) or any(
+            self._looks_like_pyside6(path)
+            for path in workspace.rglob("*.py")
+            if ".venv" not in path.parts and "venv" not in path.parts
         )
 
     def build(self, workspace: Path) -> None:
@@ -98,7 +102,35 @@ class PythonPySide6Adapter:
         return str(candidate.relative_to(workspace))
 
     @staticmethod
-    def _looks_like_pyside6(path: Path) -> bool:
+    def _has_pyside6_dependency(workspace: Path) -> bool:
+        requirements = workspace / "requirements.txt"
+        if requirements.is_file():
+            try:
+                if any(
+                    line.strip().lower().replace("-", "").startswith("pyside6")
+                    for line in requirements.read_text(encoding="utf-8", errors="replace").splitlines()
+                ):
+                    return True
+            except OSError:
+                pass
+
+        pyproject = workspace / "pyproject.toml"
+        if pyproject.is_file():
+            try:
+                import tomllib
+                data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+                data = {}
+            dependencies = data.get("project", {}).get("dependencies", [])
+            if isinstance(dependencies, list) and any(
+                isinstance(dep, str) and dep.lower().replace("-", "").startswith("pyside6")
+                for dep in dependencies
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _looks_like_pyside6(path: Path):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
         except (OSError, SyntaxError):
