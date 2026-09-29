@@ -200,12 +200,8 @@ class ChangeManager:
         return data
 
     def _state_resolve(self, relative_path: str) -> Path:
-        candidate = (self.state_root / Path(relative_path).name).resolve()
-        if candidate != self.state_root and self.state_root not in candidate.parents:
-            raise PermissionError("Invalid change backup path")
-        # Stored paths are generated internally; keep nested backup paths supported.
         candidate = (self.filesystem.root / relative_path).resolve()
-        if self.filesystem.root not in candidate.parents:
+        if candidate != self.state_root and self.state_root not in candidate.parents:
             raise PermissionError("Invalid change backup path")
         return candidate
 
