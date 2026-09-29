@@ -321,6 +321,7 @@ class MainWindow(QMainWindow):
             if result.failure is not None:
                 self._handle_preview_failure(result.failure)
             else:
+                self._preview_timer.start()
                 self.output.append("<b>Preview:</b> started successfully.")
             return
 
@@ -417,6 +418,7 @@ class MainWindow(QMainWindow):
             self.output.append(
                 f"<b>Recovery:</b> preview recovered after {len(result.attempts)} repair attempt(s)."
             )
+            self._preview_timer.start()
             self.statusBar().showMessage("Preview recovered.")
         elif self._last_failure is not None:
             self.output.append("<b>Recovery:</b> repair limit reached; preview still crashes.")
