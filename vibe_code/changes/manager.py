@@ -128,6 +128,36 @@ class ChangeManager:
             )
         return "".join(chunks) or "(no textual diff)"
 
+    def rollback_many(self, change_ids: tuple[str, ...] | list[str]) -> tuple[ChangeSet, ...]:
+        """Preflight and rollback several change sets without partial application."""
+        ids = tuple(dict.fromkeys(change_ids))
+        if not ids:
+            return ()
+
+        change_sets = tuple(self.get_change(change_id) for change_id in ids)
+        records = [record for change_set in change_sets for record in change_set.changes]
+
+        for record in records:
+            path = self.filesystem.resolve(record.path)
+            current = path.read_bytes() if path.exists() else None
+            current_hash = self._sha256(current) if current is not None else None
+            if current_hash != record.after_sha256:
+                raise RuntimeError(
+                    f"Cannot rollback {record.path}: file changed after the recorded write"
+                )
+
+        for record in records:
+            path = self.filesystem.resolve(record.path)
+            if record.existed_before:
+                if not record.backup_path:
+                    raise RuntimeError(f"Missing backup for {record.path}")
+                backup = self._state_resolve(record.backup_path)
+                self._atomic_write(path, backup.read_bytes())
+            elif path.exists():
+                path.unlink()
+
+        return change_sets
+
     def rollback(self, change_id: str) -> ChangeSet:
         data = self._load(change_id)
         records = tuple(
