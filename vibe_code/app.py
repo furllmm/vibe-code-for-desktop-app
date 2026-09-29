@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
 from vibe_code.agent.orchestrator import AgentOrchestrator, OrchestrationResult, PreviewFailure, RepairResult
-from vibe_code.agent.recovery import RecoveryAction
+from vibe_code.agent.recovery import RecoveryAction, RecoveryDecision
 from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.panel import ContextPanel
@@ -358,10 +358,24 @@ class MainWindow(QMainWindow):
         box.exec()
         clicked = box.clickedButton()
         if clicked is fix:
-            self._start_repair(failure)
+            action = RecoveryAction.FIX
         elif clicked is revert:
+            action = RecoveryAction.REVERT
+        else:
+            action = RecoveryAction.KEEP
+        self._apply_recovery_decision(
+            RecoveryDecision(action, failure.cycle, failure.change_ids)
+        )
+
+    def _apply_recovery_decision(self, decision: RecoveryDecision) -> None:
+        failure = self._last_failure
+        if failure is None:
+            return
+        if decision.action is RecoveryAction.FIX:
+            self._start_repair(failure)
+        elif decision.action is RecoveryAction.REVERT:
             self._revert_failure(failure)
-        elif clicked is keep:
+        else:
             self._last_failure = None
             self.statusBar().showMessage("Preview failure acknowledged; changes kept.")
 
