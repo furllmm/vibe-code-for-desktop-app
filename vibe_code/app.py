@@ -31,9 +31,11 @@ from vibe_code.providers.openai_compatible import (
     OpenAICompatibleProvider,
 )
 from vibe_code.tools.registry import ToolRegistry
+from vibe_code.tools.change_tools import GetChangesTool, RollbackChangesTool
 from vibe_code.tools.workspace_tools import ReadFileTool, WriteFileTool
 from vibe_code.tools.preview_tools import GetPreviewLogsTool, RunPreviewTool, StopPreviewTool
 from vibe_code.tools.filesystem import WorkspaceFS
+from vibe_code.changes import ChangeManager
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
 
@@ -210,7 +212,13 @@ class MainWindow(QMainWindow):
             self.context_panel.show_pack(pack)
             provider = self._build_provider()
             filesystem = WorkspaceFS(self.workspace.root)
-            tools = [ReadFileTool(filesystem), WriteFileTool(filesystem)]
+            changes = ChangeManager(filesystem)
+            tools = [
+                ReadFileTool(filesystem),
+                WriteFileTool(filesystem, changes),
+                GetChangesTool(changes),
+                RollbackChangesTool(changes),
+            ]
             preview = self._build_preview_engine()
             if preview is not None:
                 self._preview = preview
