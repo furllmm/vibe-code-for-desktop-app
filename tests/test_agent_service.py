@@ -3,17 +3,32 @@ from pathlib import Path
 import pytest
 
 from vibe_code.agent import AgentService
-from vibe_code.agent.service import AgentRequest
+from vibe_code.agent.service import AgentLoop, AgentRequest
 from vibe_code.context.models import ContextItem, ContextPack
+from vibe_code.providers.base import ProviderResponse, ToolCall
+from vibe_code.tools.base import ToolResult
+from vibe_code.tools.registry import ToolRegistry
 
 
 class FakeProvider:
-    def __init__(self) -> None:
-        self.messages = None
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.messages = []
 
     def complete(self, messages):
-        self.messages = messages
-        return "ok"
+        self.messages.append(list(messages))
+        return self.responses.pop(0)
+
+
+class EchoTool:
+    name = "echo"
+    description = "Echo text."
+
+    def execute(self, arguments):
+        value = arguments.get("text")
+        if not isinstance(value, str):
+            return ToolResult(False, "text must be a string")
+        return ToolResult(True, value)
 
 
 def test_agent_builds_messages_with_context(tmp_path: Path) -> None:
@@ -49,12 +64,70 @@ def test_agent_rejects_empty_prompt() -> None:
 
 
 def test_agent_complete_delegates_to_provider() -> None:
-    provider = FakeProvider()
+    provider = FakeProvider([ProviderResponse("ok")])
     result = AgentService.complete(
         provider,
         AgentRequest("hello", ContextPack((), estimated_tokens=0)),
     )
 
     assert result == "ok"
-    assert provider.messages is not None
+    assert len(provider.messages) == 1
+    assert len(provider.messages[0]) == 2
+
+
+def test_agent_loop_executes_tool_and_returns_final_response() -> None:
+    provider = FakeProvider(
+        [
+            ProviderResponse(
+                "I need to inspect this first.",
+                (ToolCall("1", "echo", {"text": "tool result"}),),
+            ),
+            ProviderResponse("Done."),
+        ]
+    )
+    result = AgentLoop(provider, ToolRegistry((EchoTool(),))).run(
+        AgentRequest("inspect", ContextPack((), estimated_tokens=0))
+    )
+
+    assert result.content == "Done."
+    assert result.turns == 2
+    assert len(result.executions) == 1
+    assert result.executions[0].result.ok
+    assert result.executions[0].result.output == "tool result"
+    assert provider.messages[1][-1].role == "tool"
+    assert provider.messages[1][-1].tool_call_id == "1"
+
+
+def test_agent_loop_rejects_unknown_tool_without_crashing() -> None:
+    provider = FakeProvider(
+        [
+            ProviderResponse("", (ToolCall("1", "missing", {}),)),
+            ProviderResponse("Recovered."),
+        ]
+    )
+    result = AgentLoop(provider, ToolRegistry()).run(
+        AgentRequest("inspect", ContextPack((), estimated_tokens=0))
+    )
+
+    assert result.content == "Recovered."
+    assert not result.executions[0].result.ok
+    assert "Unknown agent tool" in result.executions[0].result.output
+
+
+def test_agent_loop_stops_at_turn_limit() -> None:
+    provider = FakeProvider(
+        [
+            ProviderResponse(
+                "",
+                (ToolCall(str(i), "echo", {"text": "x"}),),
+            )
+            for i in range(3)
+        ]
+    )
+    result = AgentLoop(provider, ToolRegistry((EchoTool(),)), max_turns=2).run(
+        AgentRequest("loop", ContextPack((), estimated_tokens=0))
+    )
+
+    assert result.stopped_by_limit
+    assert result.turns == 2
     assert len(provider.messages) == 2
