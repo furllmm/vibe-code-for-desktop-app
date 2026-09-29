@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from ..tools.base import ToolDefinition
+
 
 @dataclass(frozen=True)
 class AgentMessage:
@@ -10,6 +12,12 @@ class AgentMessage:
     content: str
     name: str | None = None
     tool_call_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderRequest:
+    messages: list[AgentMessage]
+    tools: tuple[ToolDefinition, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -26,5 +34,5 @@ class ProviderResponse:
 
 
 class AIProvider(Protocol):
-    def complete(self, messages: list[AgentMessage]) -> ProviderResponse:
+    def complete(self, request: ProviderRequest) -> ProviderResponse:
         ...
