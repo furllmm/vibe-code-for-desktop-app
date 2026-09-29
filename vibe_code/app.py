@@ -213,7 +213,7 @@ class MainWindow(QMainWindow):
                 (
                     child
                     for child in path.iterdir()
-                    if child.name not in {" .git", ".venv", "__pycache__"}
+                    if child.name not in {".git", ".venv", "__pycache__"}
                 ),
                 key=lambda p: (not p.is_dir(), p.name.lower()),
             )
