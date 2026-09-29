@@ -47,3 +47,23 @@ def test_workspace_resolves_relative_paths(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     target = workspace.resolve("src/main.py")
     assert target == (tmp_path / "src/main.py").resolve()
+
+
+def test_context_selects_matching_symbol_range(tmp_path: Path) -> None:
+    path = tmp_path / "service.py"
+    path.write_text(
+        "def unrelated():\n    return 'x' * 1000\n\n"
+        "def target_function():\n    return 42\n\n"
+        "def another():\n    return 'y' * 1000\n",
+        encoding="utf-8",
+    )
+
+    pack = ContextService().build(
+        ContextRequest("fix target_function", tmp_path, 1000)
+    )
+
+    item = pack.items[0]
+    assert "def target_function" in (item.content or "")
+    assert "def unrelated" not in (item.content or "")
+    assert item.start_line == 4
+    assert item.end_line == 5
