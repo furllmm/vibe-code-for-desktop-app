@@ -23,6 +23,7 @@ class ProcessManager:
         self._lock = Lock()
         self._output: Queue[str] = Queue()
         self._reader: Thread | None = None
+        self._stop_requested = False
 
     @property
     def running(self) -> bool:
@@ -36,6 +37,7 @@ class ProcessManager:
             if self.running:
                 raise RuntimeError("process is already running")
             try:
+                self._stop_requested = False
                 self._process = subprocess.Popen(
                     list(command),
                     cwd=self.workspace,
@@ -48,7 +50,11 @@ class ProcessManager:
             except OSError:
                 self._process = None
                 raise
-            self._reader = Thread(target=self._drain_output, args=(self._process,), daemon=True)
+            self._reader = Thread(
+                target=self._drain_output,
+                args=(self._process,),
+                daemon=True,
+            )
             self._reader.start()
 
     def stop(self, timeout: float = 3.0) -> ProcessResult | None:
@@ -58,6 +64,7 @@ class ProcessManager:
             process = self._process
             if process is None:
                 return None
+            self._stop_requested = True
             if process.poll() is None:
                 process.terminate()
                 try:
@@ -67,7 +74,7 @@ class ProcessManager:
                     process.wait(timeout=timeout)
             result = ProcessResult(
                 returncode=process.returncode,
-                crashed=process.returncode not in (0, -15),
+                crashed=False,
             )
             self._process = None
             return result
@@ -84,7 +91,7 @@ class ProcessManager:
                 self._process = None
         return ProcessResult(
             returncode=returncode,
-            crashed=returncode != 0,
+            crashed=returncode != 0 and not self._stop_requested,
         )
 
     def read_available(self) -> str:
