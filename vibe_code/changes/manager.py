@@ -138,14 +138,12 @@ class ChangeManager:
                 for item in change_set.changes
             ],
         }
-        self.manifest_path.write_text(
-            json.dumps(
-                {**self._read_manifest(), change_set.id: payload},
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
-        )
+        data = json.dumps(
+            {**self._read_manifest(), change_set.id: payload},
+            indent=2,
+            sort_keys=True,
+        ).encode("utf-8")
+        self._atomic_write(self.manifest_path, data)
 
     def _load(self, change_id: str) -> dict[str, object]:
         data = self._read_manifest()
