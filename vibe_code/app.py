@@ -202,6 +202,8 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            if self._preview is not None:
+                self.stop_preview()
             pack = self.context_service.build(
                 ContextRequest(prompt, self.workspace.root, token_budget=12000)
             )
