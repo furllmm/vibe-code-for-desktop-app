@@ -34,7 +34,7 @@ from vibe_code.tools.registry import ToolRegistry
 from vibe_code.tools.workspace_tools import ReadFileTool, WriteFileTool
 from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.workspace import Workspace
-from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine
+from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
 
 
 class MainWindow(QMainWindow):
@@ -127,21 +127,30 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Open a workspace first")
             return
         command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
-        if not command_text:
-            self.statusBar().showMessage(
-                "Set VIBE_CODE_PREVIEW_COMMAND before running a preview"
-            )
-            return
         try:
-            command = tuple(shlex.split(command_text))
+            if command_text:
+                command = tuple(shlex.split(command_text))
+                if not command:
+                    raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
+                adapter = GenericPreviewAdapter(PreviewConfig(command))
+                adapter_name = "configured command"
+            else:
+                entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
+                adapter = PythonPySide6Adapter(entrypoint)
+                adapter_name = "Python/PySide6"
+                if not adapter.detect(self.workspace.root):
+                    raise RuntimeError(
+                        "No PySide6 project detected. Set VIBE_CODE_PREVIEW_COMMAND "
+                        "or add a Python/PySide6 project."
+                    )
             self._preview = PreviewEngine(
                 self.workspace.root,
-                GenericPreviewAdapter(PreviewConfig(command)),
+                adapter,
             )
             self._preview.build()
             self._preview.start()
             self._preview_timer.start()
-            self.statusBar().showMessage("Preview is running")
+            self.statusBar().showMessage(f"Preview is running ({adapter_name})")
         except (OSError, ValueError, RuntimeError) as exc:
             self._preview = None
             self.statusBar().showMessage(f"Preview error: {exc}")
