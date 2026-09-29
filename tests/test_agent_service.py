@@ -5,7 +5,7 @@ import pytest
 from vibe_code.agent import AgentService
 from vibe_code.agent.service import AgentLoop, AgentRequest
 from vibe_code.context.models import ContextItem, ContextPack
-from vibe_code.providers.base import ProviderResponse, ToolCall
+from vibe_code.providers.base import ProviderRequest, ProviderResponse, ToolCall
 from vibe_code.tools.base import ToolResult
 from vibe_code.tools.registry import ToolRegistry
 
@@ -13,16 +13,22 @@ from vibe_code.tools.registry import ToolRegistry
 class FakeProvider:
     def __init__(self, responses):
         self.responses = list(responses)
-        self.messages = []
+        self.requests = []
 
-    def complete(self, messages):
-        self.messages.append(list(messages))
+    def complete(self, request: ProviderRequest):
+        self.requests.append(request)
         return self.responses.pop(0)
 
 
 class EchoTool:
     name = "echo"
     description = "Echo text."
+    parameters = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
 
     def execute(self, arguments):
         value = arguments.get("text")
@@ -71,8 +77,26 @@ def test_agent_complete_delegates_to_provider() -> None:
     )
 
     assert result == "ok"
-    assert len(provider.messages) == 1
-    assert len(provider.messages[0]) == 2
+    assert len(provider.requests) == 1
+    assert len(provider.requests[0].messages) == 2
+    assert provider.requests[0].tools == ()
+
+
+def test_agent_loop_passes_registered_tool_definitions() -> None:
+    provider = FakeProvider([ProviderResponse("Done.")])
+    registry = ToolRegistry((EchoTool(),))
+
+    result = AgentLoop(provider, registry).run(
+        AgentRequest("inspect", ContextPack((), estimated_tokens=0))
+    )
+
+    assert result.content == "Done."
+    assert len(provider.requests) == 1
+    assert len(provider.requests[0].tools) == 1
+    definition = provider.requests[0].tools[0]
+    assert definition.name == "echo"
+    assert definition.description == "Echo text."
+    assert definition.parameters["required"] == ["text"]
 
 
 def test_agent_loop_executes_tool_and_returns_final_response() -> None:
@@ -94,8 +118,8 @@ def test_agent_loop_executes_tool_and_returns_final_response() -> None:
     assert len(result.executions) == 1
     assert result.executions[0].result.ok
     assert result.executions[0].result.output == "tool result"
-    assert provider.messages[1][-1].role == "tool"
-    assert provider.messages[1][-1].tool_call_id == "1"
+    assert provider.requests[1].messages[-1].role == "tool"
+    assert provider.requests[1].messages[-1].tool_call_id == "1"
 
 
 def test_agent_loop_rejects_unknown_tool_without_crashing() -> None:
@@ -117,10 +141,7 @@ def test_agent_loop_rejects_unknown_tool_without_crashing() -> None:
 def test_agent_loop_stops_at_turn_limit() -> None:
     provider = FakeProvider(
         [
-            ProviderResponse(
-                "",
-                (ToolCall(str(i), "echo", {"text": "x"}),),
-            )
+            ProviderResponse("", (ToolCall(str(i), "echo", {"text": "x"}),))
             for i in range(3)
         ]
     )
@@ -130,4 +151,4 @@ def test_agent_loop_stops_at_turn_limit() -> None:
 
     assert result.stopped_by_limit
     assert result.turns == 2
-    assert len(provider.messages) == 2
+    assert len(provider.requests) == 2
