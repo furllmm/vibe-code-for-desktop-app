@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
+from vibe_code.agent.orchestrator import AgentOrchestrator, OrchestrationResult, PreviewFailure, RepairResult
+from vibe_code.agent.recovery import RecoveryAction
 from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.panel import ContextPanel
@@ -54,6 +56,8 @@ class MainWindow(QMainWindow):
         self._worker: AgentWorker | None = None
         self._preview: PreviewEngine | None = None
         self._change_manager: ChangeManager | None = None
+        self._orchestrator: AgentOrchestrator | None = None
+        self._last_failure: PreviewFailure | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -233,16 +237,20 @@ class MainWindow(QMainWindow):
                 RollbackChangesTool(changes),
             ]
             preview = self._build_preview_engine()
-            if preview is not None:
-                self._preview = preview
-                tools.extend((
-                    RunPreviewTool(preview),
-                    GetPreviewLogsTool(preview),
-                    StopPreviewTool(preview),
-                ))
             registry = ToolRegistry(tuple(tools))
             loop = AgentLoop(provider, registry)
             request = AgentRequest(prompt, pack)
+            self._orchestrator = None
+            if preview is not None:
+                self._preview = preview
+                self._orchestrator = AgentOrchestrator(
+                    loop,
+                    self.context_service,
+                    changes,
+                    preview,
+                    self.workspace.root,
+                    max_repair_cycles=3,
+                )
         except (OSError, ValueError, RuntimeError) as exc:
             self.statusBar().showMessage(f"Agent setup error: {exc}")
             return
@@ -252,7 +260,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Agent is working…")
 
         thread = QThread(self)
-        worker = AgentWorker(loop, request)
+        work = self._orchestrator.run if self._orchestrator is not None else None
+        worker = AgentWorker(loop, request, work=(lambda: work(prompt)) if work is not None else None)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._agent_finished)
@@ -297,7 +306,27 @@ class MainWindow(QMainWindow):
             OpenAICompatibleConfig(base_url, model, api_key, timeout)
         )
 
-    def _agent_finished(self, result: AgentRunResult) -> None:
+    def _agent_finished(self, result: object) -> None:
+        if isinstance(result, OrchestrationResult):
+            agent = result.agent
+            self.output.append(f"<b>Agent:</b> {html.escape(agent.content)}")
+            self._last_failure = result.failure
+            if self.change_panel is not None:
+                self.change_panel.refresh()
+            self.statusBar().showMessage(
+                f"Agent finished in {agent.turns} turn(s)"
+                + (" — turn limit reached" if agent.stopped_by_limit else "")
+            )
+            if result.failure is not None:
+                self._handle_preview_failure(result.failure)
+            else:
+                self.output.append("<b>Preview:</b> started successfully.")
+            return
+
+        if not isinstance(result, AgentRunResult):
+            self.output.append(f"<b>Agent:</b> {html.escape(str(result))}")
+            return
+
         self.output.append(f"<b>Agent:</b> {html.escape(result.content)}")
         if self.change_panel is not None:
             self.change_panel.refresh()
@@ -311,6 +340,90 @@ class MainWindow(QMainWindow):
             f"Agent finished in {result.turns} turn(s)"
             + (" — turn limit reached" if result.stopped_by_limit else "")
         )
+
+    def _handle_preview_failure(self, failure: PreviewFailure) -> None:
+        logs = failure.logs.strip() or "<no captured preview output>"
+        preview = logs[-4000:]
+        box = QMessageBox(self)
+        box.setWindowTitle("Preview crashed")
+        box.setText(
+            f"Preview crashed with exit code {failure.returncode}. "
+            "Choose how to recover."
+        )
+        box.setInformativeText(preview)
+        fix = box.addButton("Fix", QMessageBox.ButtonRole.AcceptRole)
+        revert = box.addButton("Revert Changes", QMessageBox.ButtonRole.DestructiveRole)
+        keep = box.addButton("Keep Changes", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is fix:
+            self._start_repair(failure)
+        elif clicked is revert:
+            self._revert_failure(failure)
+        elif clicked is keep:
+            self._last_failure = None
+            self.statusBar().showMessage("Preview failure acknowledged; changes kept.")
+
+    def _start_repair(self, failure: PreviewFailure) -> None:
+        if self._orchestrator is None or self._thread is not None:
+            return
+        loop = self._orchestrator.agent
+        request = AgentRequest("repair preview failure", self.context_service.build(
+            ContextRequest("repair preview failure", self.workspace.root, token_budget=12000)
+        ))
+        self.output.append("<b>Recovery:</b> fixing preview crash…")
+        self.run_button.setEnabled(False)
+        thread = QThread(self)
+        worker = AgentWorker(
+            loop,
+            request,
+            work=lambda: self._orchestrator.repair(failure),
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._repair_finished)
+        worker.failed.connect(self._agent_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._agent_thread_finished)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _repair_finished(self, result: object) -> None:
+        if not isinstance(result, RepairResult):
+            self._agent_finished(result)
+            return
+        if self.change_panel is not None:
+            self.change_panel.refresh()
+        self._last_failure = result.attempts[-1].failure if result.attempts else None
+        if result.success:
+            self.output.append(
+                f"<b>Recovery:</b> preview recovered after {len(result.attempts)} repair attempt(s)."
+            )
+            self.statusBar().showMessage("Preview recovered.")
+        elif self._last_failure is not None:
+            self.output.append("<b>Recovery:</b> repair limit reached; preview still crashes.")
+            self._handle_preview_failure(self._last_failure)
+        else:
+            self.statusBar().showMessage("Recovery stopped without a preview result.")
+
+    def _revert_failure(self, failure: PreviewFailure) -> None:
+        if self._change_manager is None:
+            return
+        try:
+            self._change_manager.rollback_many(failure.change_ids)
+        except (OSError, KeyError, PermissionError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Rollback failed", str(exc))
+            return
+        if self.workspace is not None:
+            self.load_workspace(self.workspace.root)
+            self.refresh_context()
+        if self.change_panel is not None:
+            self.change_panel.refresh()
+        self._last_failure = None
+        self.statusBar().showMessage("Failed changes reverted safely.")
 
     def _rollback_change(self, change_id: str) -> None:
         if self._change_manager is None:
