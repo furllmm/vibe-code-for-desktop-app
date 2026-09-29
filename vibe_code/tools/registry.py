@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import AgentTool
+from .base import AgentTool, ToolDefinition
 
 
 class ToolRegistry:
@@ -22,3 +22,9 @@ class ToolRegistry:
 
     def names(self) -> tuple[str, ...]:
         return tuple(self._tools)
+
+    def definitions(self) -> tuple[ToolDefinition, ...]:
+        return tuple(
+            ToolDefinition(tool.name, tool.description, tool.parameters)
+            for tool in self._tools.values()
+        )
