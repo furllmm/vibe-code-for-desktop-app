@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ..index import ProjectIndexer
+from ..index.indexer import FileIndex
 from .models import ContextItem, ContextPack, ContextRequest
 
 _IGNORE_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
@@ -16,14 +18,21 @@ _TEXT_EXTENSIONS = {
 class ContextService:
     """Discover and rank repository text files for a bounded agent context."""
 
+    def __init__(self, indexer: ProjectIndexer | None = None) -> None:
+        self._indexer = indexer or ProjectIndexer()
+
     def build(self, request: ContextRequest) -> ContextPack:
         if request.token_budget <= 0:
             raise ValueError("token_budget must be greater than zero")
 
         root = request.workspace.expanduser().resolve()
         focus_paths = {p.expanduser().resolve() for p in request.focus_paths}
+        index = {
+            item.path.resolve(): item
+            for item in self._indexer.build(root)
+        }
         scored = [
-            self._score(path, request.prompt, focus_paths)
+            self._score(path, request.prompt, focus_paths, index.get(path.resolve()))
             for path in self._discover(root)
         ]
         scored.sort(key=lambda item: (-item.score, str(item.path)))
@@ -62,10 +71,18 @@ class ContextService:
         path: Path,
         prompt: str,
         focus_paths: set[Path],
+        indexed: FileIndex | None,
     ) -> ContextItem:
         text = self._read(path)
         terms = {term.lower() for term in re.findall(r"[A-Za-z0-9_]{3,}", prompt)}
-        haystack = f"{path.name}\n{text[:12000]}".lower()
+        symbol_text = ""
+        if indexed is not None:
+            symbol_text = " ".join(
+                [symbol.name for symbol in indexed.symbols]
+                + list(indexed.imports)
+            )
+        haystack = f"{path.name}\n{symbol_text}\n{text[:12000]}".lower()
+
         score = 100.0 if path.resolve() in focus_paths else 0.0
         reasons = ["explicitly focused"] if path.resolve() in focus_paths else []
 
@@ -73,6 +90,11 @@ class ContextService:
             if term in path.name.lower():
                 score += 12
                 reasons.append(f"name:{term}")
+            elif indexed is not None and any(term in value.lower() for value in (
+                [symbol.name for symbol in indexed.symbols] + list(indexed.imports)
+            )):
+                score += 7
+                reasons.append(f"symbol:{term}")
             elif term in haystack:
                 score += 2
                 reasons.append(f"content:{term}")
@@ -82,7 +104,7 @@ class ContextService:
             reasons.append("project metadata")
 
         return ContextItem(
-            path, "file", score, ", ".join(reasons) or "baseline candidate", text
+            path, "file", score, ", ".join(dict.fromkeys(reasons)) or "baseline candidate", text
         )
 
     @staticmethod
