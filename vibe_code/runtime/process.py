@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from threading import Lock
+from threading import Lock, Thread
+from queue import Empty, Queue
 from typing import Sequence
 
 
@@ -20,6 +21,8 @@ class ProcessManager:
         self.workspace = workspace.resolve()
         self._process: subprocess.Popen[str] | None = None
         self._lock = Lock()
+        self._output: Queue[str] = Queue()
+        self._reader: Thread | None = None
 
     @property
     def running(self) -> bool:
@@ -45,6 +48,8 @@ class ProcessManager:
             except OSError:
                 self._process = None
                 raise
+            self._reader = Thread(target=self._drain_output, args=(self._process,), daemon=True)
+            self._reader.start()
 
     def stop(self, timeout: float = 3.0) -> ProcessResult | None:
         if timeout <= 0:
@@ -83,10 +88,19 @@ class ProcessManager:
         )
 
     def read_available(self) -> str:
-        process = self._process
-        if process is None or process.stdout is None:
-            return ""
-        return process.stdout.read(0)
+        chunks: list[str] = []
+        while True:
+            try:
+                chunks.append(self._output.get_nowait())
+            except Empty:
+                break
+        return "".join(chunks)
+
+    def _drain_output(self, process: subprocess.Popen[str]) -> None:
+        if process.stdout is None:
+            return
+        for line in process.stdout:
+            self._output.put(line)
 
     def communicate(self, timeout: float | None = None) -> str:
         process = self._process
