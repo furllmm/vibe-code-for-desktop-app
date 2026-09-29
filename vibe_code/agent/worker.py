@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .service import AgentRequest, AgentRunResult, AgentLoop
+from collections.abc import Callable
 
 
 class AgentWorker(QObject):
@@ -11,15 +12,16 @@ class AgentWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, loop: AgentLoop, request: AgentRequest) -> None:
+    def __init__(self, loop: AgentLoop, request: AgentRequest, work: Callable[[], object] | None = None) -> None:
         super().__init__()
         self.loop = loop
         self.request = request
+        self.work = work
 
     @Slot()
     def run(self) -> None:
         try:
-            result = self.loop.run(self.request)
+            result = self.work() if self.work is not None else self.loop.run(self.request)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
