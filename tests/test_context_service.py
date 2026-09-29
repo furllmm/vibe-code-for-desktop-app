@@ -81,3 +81,14 @@ def test_context_prioritizes_uncommitted_git_file(tmp_path: Path) -> None:
     assert pack.items
     assert pack.items[0].path.name == "changed.py"
     assert "recent git change" in pack.items[0].reason
+
+
+def test_context_pack_serializes_ranges(tmp_path: Path) -> None:
+    path = tmp_path / "service.py"
+    path.write_text(
+        "def target():\n    return 42\n\n", encoding="utf-8"
+    )
+    pack = ContextService().build(ContextRequest("target", tmp_path, 1000))
+    assert pack.items
+    assert "(L1-2)" in pack.as_text()
+    assert "def target" in pack.as_text()
