@@ -15,6 +15,14 @@ class ContextItem:
     start_line: int | None = None
     end_line: int | None = None
 
+    @property
+    def line_range(self) -> str:
+        if self.start_line is None or self.end_line is None:
+            return ""
+        if self.start_line == self.end_line:
+            return f"L{self.start_line}"
+        return f"L{self.start_line}-{self.end_line}"
+
 
 @dataclass(frozen=True)
 class ContextRequest:
@@ -30,8 +38,18 @@ class ContextPack:
     estimated_tokens: int
 
     def as_text(self) -> str:
-        return "\n\n".join(
-            f"--- {item.path} ---\n{item.content}"
-            for item in self.items
-            if item.content is not None
+        sections: list[str] = []
+        for item in self.items:
+            if item.content is None:
+                continue
+            location = f" ({item.line_range})" if item.line_range else ""
+            sections.append(
+                f"--- {item.path}{location} ---\n{item.content}"
+            )
+        return "\n\n".join(sections)
+
+    def summary(self) -> str:
+        return (
+            f"{len(self.items)} context items, "
+            f"~{self.estimated_tokens} estimated tokens"
         )
