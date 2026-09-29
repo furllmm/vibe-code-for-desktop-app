@@ -69,3 +69,39 @@ def test_provider_rejects_invalid_tool_arguments(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="arguments must be a JSON object"):
         provider.complete(ProviderRequest([AgentMessage("user", "inspect")]))
+
+
+def test_provider_serializes_assistant_tool_call_history(monkeypatch) -> None:
+    captured = {}
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "done"}}]}).encode()
+
+    def fake_urlopen(req, timeout):
+        captured["payload"] = json.loads(req.data)
+        return Response()
+
+    monkeypatch.setattr(
+        "vibe_code.providers.openai_compatible.urllib_request.urlopen",
+        fake_urlopen,
+    )
+    from vibe_code.providers.base import ToolCall
+
+    messages = [
+        AgentMessage("assistant", "Reading.", tool_calls=(
+            ToolCall("call-1", "read_file", {"path": "main.py"}),
+        )),
+    ]
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig("http://localhost:8000/v1", "local-model")
+    )
+    provider.complete(ProviderRequest(messages))
+
+    call = captured["payload"]["messages"][0]["tool_calls"][0]
+    assert call["id"] == "call-1"
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "read_file"
+    assert json.loads(call["function"]["arguments"]) == {"path": "main.py"}
