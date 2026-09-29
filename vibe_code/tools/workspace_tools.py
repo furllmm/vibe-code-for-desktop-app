@@ -7,6 +7,14 @@ from .filesystem import WorkspaceFS
 class ReadFileTool:
     name = "read_file"
     description = "Read a UTF-8 text file inside the current workspace."
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Workspace-relative file path."},
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    }
 
     def __init__(self, filesystem: WorkspaceFS) -> None:
         self.filesystem = filesystem
@@ -24,6 +32,15 @@ class ReadFileTool:
 class WriteFileTool:
     name = "write_file"
     description = "Write UTF-8 text to a file inside the current workspace."
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Workspace-relative file path."},
+            "content": {"type": "string", "description": "Complete UTF-8 file contents."},
+        },
+        "required": ["path", "content"],
+        "additionalProperties": False,
+    }
 
     def __init__(self, filesystem: WorkspaceFS) -> None:
         self.filesystem = filesystem
