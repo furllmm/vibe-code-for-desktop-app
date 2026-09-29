@@ -10,6 +10,7 @@ class Symbol:
     name: str
     kind: str
     line: int
+    end_line: int | None = None
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,9 @@ class ProjectIndexer:
         imports: list[str] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                symbols.append(Symbol(node.name, "function", node.lineno))
+                symbols.append(Symbol(node.name, "function", node.lineno, getattr(node, "end_lineno", None)))
             elif isinstance(node, ast.ClassDef):
-                symbols.append(Symbol(node.name, "class", node.lineno))
+                symbols.append(Symbol(node.name, "class", node.lineno, getattr(node, "end_lineno", None)))
             elif isinstance(node, ast.Import):
                 imports.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
