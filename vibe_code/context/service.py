@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 from ..index import ProjectIndexer
@@ -31,8 +32,9 @@ class ContextService:
             item.path.resolve(): item
             for item in self._indexer.build(root)
         }
+        recent_paths = self._recent_paths(root)
         scored = [
-            self._score_metadata(path, request.prompt, focus_paths, index.get(path.resolve()))
+            self._score_metadata(path, request.prompt, focus_paths, index.get(path.resolve()), recent_paths)
             for path in self._discover(root)
         ]
         scored.sort(key=lambda item: (-item.score, str(item.path)))
@@ -71,6 +73,7 @@ class ContextService:
         prompt: str,
         focus_paths: set[Path],
         indexed: FileIndex | None,
+        recent_paths: set[Path],
     ) -> ContextItem:
         terms = {term.lower() for term in re.findall(r"[A-Za-z0-9_]{3,}", prompt)}
         symbol_text = ""
@@ -81,8 +84,12 @@ class ContextService:
             )
         haystack = f"{path.name}\n{symbol_text}".lower()
 
-        score = 100.0 if path.resolve() in focus_paths else 0.0
-        reasons = ["explicitly focused"] if path.resolve() in focus_paths else []
+        resolved = path.resolve()
+        score = 100.0 if resolved in focus_paths else 0.0
+        reasons = ["explicitly focused"] if resolved in focus_paths else []
+        if resolved in recent_paths:
+            score += 8
+            reasons.append("recent git change")
 
         for term in terms:
             if term in path.name.lower():
@@ -137,6 +144,29 @@ class ContextService:
             item.path, item.kind, item.score, item.reason, text,
             item.start_line, item.end_line,
         )
+
+    @staticmethod
+    def _recent_paths(root: Path) -> set[Path]:
+        try:
+            result = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=root, check=False, capture_output=True, text=True, timeout=2)
+        except (OSError, subprocess.SubprocessError):
+            return set()
+        if result.returncode != 0:
+            return set()
+        paths: set[Path] = set()
+        for line in result.stdout.splitlines():
+            if len(line) < 4:
+                continue
+            raw = line[3:]
+            if " -> " in raw:
+                raw = raw.split(" -> ", 1)[1]
+            try:
+                candidate = (root / raw).resolve()
+                if candidate.is_relative_to(root):
+                    paths.add(candidate)
+            except (OSError, ValueError):
+                continue
+        return paths
 
     @staticmethod
     def _read(path: Path) -> str:
