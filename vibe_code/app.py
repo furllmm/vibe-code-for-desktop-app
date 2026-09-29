@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import html
 import os
+import shlex
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread
+from PySide6.QtCore import QThread, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,6 +34,7 @@ from vibe_code.tools.registry import ToolRegistry
 from vibe_code.tools.workspace_tools import ReadFileTool, WriteFileTool
 from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.workspace import Workspace
+from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine
 
 
 class MainWindow(QMainWindow):
@@ -44,6 +46,7 @@ class MainWindow(QMainWindow):
         self.context_service = ContextService()
         self._thread: QThread | None = None
         self._worker: AgentWorker | None = None
+        self._preview: PreviewEngine | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -53,6 +56,15 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_context)
         toolbar.addAction(open_action)
         toolbar.addAction(refresh_action)
+        preview_start = QAction("Run Preview", self)
+        preview_start.triggered.connect(self.run_preview)
+        preview_stop = QAction("Stop Preview", self)
+        preview_stop.triggered.connect(self.stop_preview)
+        toolbar.addAction(preview_start)
+        toolbar.addAction(preview_stop)
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setInterval(250)
+        self._preview_timer.timeout.connect(self._poll_preview)
 
         splitter = QSplitter()
         self.project_tree = QTreeWidget()
@@ -109,6 +121,62 @@ class MainWindow(QMainWindow):
         )
         self.context_panel.show_pack(pack)
         self.statusBar().showMessage(f"Context: {pack.summary()}")
+
+    def run_preview(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
+        if not command_text:
+            self.statusBar().showMessage(
+                "Set VIBE_CODE_PREVIEW_COMMAND before running a preview"
+            )
+            return
+        try:
+            command = tuple(shlex.split(command_text))
+            self._preview = PreviewEngine(
+                self.workspace.root,
+                GenericPreviewAdapter(PreviewConfig(command)),
+            )
+            self._preview.build()
+            self._preview.start()
+            self._preview_timer.start()
+            self.statusBar().showMessage("Preview is running")
+        except (OSError, ValueError, RuntimeError) as exc:
+            self._preview = None
+            self.statusBar().showMessage(f"Preview error: {exc}")
+
+    def stop_preview(self) -> None:
+        if self._preview is None:
+            return
+        result = self._preview.process.stop()
+        self._preview_timer.stop()
+        self._preview = None
+        if result is not None:
+            self.statusBar().showMessage(
+                f"Preview stopped (exit {result.returncode})"
+            )
+
+    def _poll_preview(self) -> None:
+        if self._preview is None:
+            self._preview_timer.stop()
+            return
+        logs = self._preview.read_logs()
+        if logs:
+            self.output.append(
+                "<b>Preview:</b> " + html.escape(logs).replace("\n", "<br>")
+            )
+        result = self._preview.poll()
+        if result is not None:
+            self._preview_timer.stop()
+            self.output.append(
+                f"<b>Preview exited:</b> {result.returncode}"
+                + (" (crash/error)" if result.crashed else "")
+            )
+            self.statusBar().showMessage(
+                f"Preview exited with code {result.returncode}"
+            )
+            self._preview = None
 
     def run_agent(self) -> None:
         if self.workspace is None:
@@ -198,6 +266,10 @@ class MainWindow(QMainWindow):
         self._thread = None
         self._worker = None
         self.run_button.setEnabled(True)
+
+    def closeEvent(self, event) -> None:
+        self.stop_preview()
+        super().closeEvent(event)
 
     def load_workspace(self, root: Path) -> None:
         self.project_tree.clear()
