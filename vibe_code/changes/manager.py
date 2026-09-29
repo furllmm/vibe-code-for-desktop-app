@@ -69,6 +69,26 @@ class ChangeManager:
         self._save(change_set)
         return record
 
+    def list_changes(self) -> tuple[ChangeSet, ...]:
+        data = self._read_manifest()
+        result: list[ChangeSet] = []
+        for change_id, payload in data.items():
+            if not isinstance(payload, dict) or not isinstance(payload.get("changes"), list):
+                continue
+            records = tuple(
+                ChangeRecord(
+                    path=item["path"],
+                    existed_before=bool(item["existed_before"]),
+                    before_sha256=item.get("before_sha256"),
+                    after_sha256=item["after_sha256"],
+                    backup_path=item.get("backup_path"),
+                )
+                for item in payload["changes"]
+                if isinstance(item, dict)
+            )
+            result.append(ChangeSet(change_id, records))
+        return tuple(reversed(result))
+
     def rollback(self, change_id: str) -> ChangeSet:
         data = self._load(change_id)
         records = tuple(
