@@ -59,3 +59,15 @@ def test_write_file_uses_change_manager(tmp_path: Path) -> None:
     assert result.ok
     assert (tmp_path / "main.py").read_text(encoding="utf-8") == "print('ok')"
     assert len(manager.list_changes()) == 1
+
+
+def test_diff_is_available_for_review(tmp_path: Path) -> None:
+    manager = ChangeManager(WorkspaceFS(tmp_path))
+    (tmp_path / "app.py").write_text("old\n", encoding="utf-8")
+    manager.write_text("app.py", "new\n")
+    change_id = manager.list_changes()[0].id
+
+    diff = manager.diff(change_id)
+
+    assert "-old" in diff
+    assert "+new" in diff
