@@ -32,6 +32,7 @@ from vibe_code.providers.openai_compatible import (
 )
 from vibe_code.tools.registry import ToolRegistry
 from vibe_code.tools.workspace_tools import ReadFileTool, WriteFileTool
+from vibe_code.tools.preview_tools import GetPreviewLogsTool, RunPreviewTool, StopPreviewTool
 from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
@@ -207,10 +208,16 @@ class MainWindow(QMainWindow):
             self.context_panel.show_pack(pack)
             provider = self._build_provider()
             filesystem = WorkspaceFS(self.workspace.root)
-            registry = ToolRegistry((
-                ReadFileTool(filesystem),
-                WriteFileTool(filesystem),
-            ))
+            tools = [ReadFileTool(filesystem), WriteFileTool(filesystem)]
+            preview = self._build_preview_engine()
+            if preview is not None:
+                self._preview = preview
+                tools.extend((
+                    RunPreviewTool(preview),
+                    GetPreviewLogsTool(preview),
+                    StopPreviewTool(preview),
+                ))
+            registry = ToolRegistry(tuple(tools))
             loop = AgentLoop(provider, registry)
             request = AgentRequest(prompt, pack)
         except (OSError, ValueError, RuntimeError) as exc:
@@ -235,6 +242,21 @@ class MainWindow(QMainWindow):
         self._worker = worker
         thread.start()
 
+    def _build_preview_engine(self) -> PreviewEngine | None:
+        if self.workspace is None:
+            return None
+        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
+        if command_text:
+            command = tuple(shlex.split(command_text))
+            if not command:
+                raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
+            adapter = GenericPreviewAdapter(PreviewConfig(command))
+        else:
+            entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
+            adapter = PythonPySide6Adapter(entrypoint)
+            if not adapter.detect(self.workspace.root):
+                return None
+        return PreviewEngine(self.workspace.root, adapter)
     def _build_provider(self) -> OpenAICompatibleProvider:
         base_url = os.environ.get("VIBE_CODE_BASE_URL", "").strip()
         model = os.environ.get("VIBE_CODE_MODEL", "").strip()
