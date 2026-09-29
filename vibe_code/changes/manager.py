@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import difflib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +92,41 @@ class ChangeManager:
             )
             result.append(ChangeSet(change_id, records))
         return tuple(reversed(result))
+
+    def get_change(self, change_id: str) -> ChangeSet:
+        data = self._load(change_id)
+        records = tuple(
+            ChangeRecord(
+                path=item["path"],
+                existed_before=bool(item["existed_before"]),
+                before_sha256=item.get("before_sha256"),
+                after_sha256=item["after_sha256"],
+                backup_path=item.get("backup_path"),
+            )
+            for item in data["changes"]
+        )
+        return ChangeSet(change_id, records)
+
+    def diff(self, change_id: str) -> str:
+        change_set = self.get_change(change_id)
+        chunks: list[str] = []
+        for record in change_set.changes:
+            before = ""
+            if record.existed_before and record.backup_path:
+                before = self._state_resolve(record.backup_path).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            path = self.filesystem.resolve(record.path)
+            after = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+            chunks.extend(
+                difflib.unified_diff(
+                    before.splitlines(keepends=True),
+                    after.splitlines(keepends=True),
+                    fromfile=f"a/{record.path}",
+                    tofile=f"b/{record.path}",
+                )
+            )
+        return "".join(chunks) or "(no textual diff)"
 
     def rollback(self, change_id: str) -> ChangeSet:
         data = self._load(change_id)
