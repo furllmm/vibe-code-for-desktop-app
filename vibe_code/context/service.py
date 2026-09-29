@@ -32,7 +32,7 @@ class ContextService:
             for item in self._indexer.build(root)
         }
         scored = [
-            self._score(path, request.prompt, focus_paths, index.get(path.resolve()))
+            self._score_metadata(path, request.prompt, focus_paths, index.get(path.resolve()))
             for path in self._discover(root)
         ]
         scored.sort(key=lambda item: (-item.score, str(item.path)))
@@ -41,9 +41,8 @@ class ContextService:
         used = 0
         selected: list[ContextItem] = []
         for item in scored:
-            if item.content is None:
-                continue
-            size = len(item.content)
+            item = self._materialize(item, self._read(item.path))
+            size = len(item.content or "")
             if size == 0 or used + size > budget_chars:
                 continue
             selected.append(item)
@@ -66,14 +65,13 @@ class ContextService:
             paths.append(path)
         return paths
 
-    def _score(
+    def _score_metadata(
         self,
         path: Path,
         prompt: str,
         focus_paths: set[Path],
         indexed: FileIndex | None,
     ) -> ContextItem:
-        text = self._read(path)
         terms = {term.lower() for term in re.findall(r"[A-Za-z0-9_]{3,}", prompt)}
         symbol_text = ""
         if indexed is not None:
@@ -81,7 +79,7 @@ class ContextService:
                 [symbol.name for symbol in indexed.symbols]
                 + list(indexed.imports)
             )
-        haystack = f"{path.name}\n{symbol_text}\n{text[:12000]}".lower()
+        haystack = f"{path.name}\n{symbol_text}".lower()
 
         score = 100.0 if path.resolve() in focus_paths else 0.0
         reasons = ["explicitly focused"] if path.resolve() in focus_paths else []
@@ -113,7 +111,6 @@ class ContextService:
         if matched_symbols:
             start_line = min(symbol.line for symbol in matched_symbols)
             end_line = max(symbol.end_line or symbol.line for symbol in matched_symbols)
-            text = self._slice_lines(text, start_line, end_line)
             reasons.append(f"symbol-range:{start_line}-{end_line}")
 
         return ContextItem(
@@ -121,7 +118,7 @@ class ContextService:
             "file",
             score,
             ", ".join(dict.fromkeys(reasons)) or "baseline candidate",
-            text,
+            None,
             start_line,
             end_line,
         )
@@ -130,6 +127,16 @@ class ContextService:
     def _slice_lines(text: str, start_line: int, end_line: int) -> str:
         lines = text.splitlines(keepends=True)
         return "".join(lines[max(0, start_line - 1):end_line])
+
+    @staticmethod
+    def _materialize(item: ContextItem, text: str) -> ContextItem:
+        if item.start_line is not None and item.end_line is not None:
+            lines = text.splitlines(keepends=True)
+            text = "".join(lines[max(0, item.start_line - 1):item.end_line])
+        return ContextItem(
+            item.path, item.kind, item.score, item.reason, text,
+            item.start_line, item.end_line,
+        )
 
     @staticmethod
     def _read(path: Path) -> str:
