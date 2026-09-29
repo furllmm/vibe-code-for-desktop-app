@@ -67,3 +67,17 @@ def test_context_selects_matching_symbol_range(tmp_path: Path) -> None:
     assert "def unrelated" not in (item.content or "")
     assert item.start_line == 4
     assert item.end_line == 5
+
+
+def test_context_prioritizes_uncommitted_git_file(tmp_path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "changed.py").write_text("def changed(): pass\n", encoding="utf-8")
+    (tmp_path / "other.py").write_text("def other(): pass\n", encoding="utf-8")
+
+    pack = ContextService().build(ContextRequest("unrelated", tmp_path, 1000))
+
+    assert pack.items
+    assert pack.items[0].path.name == "changed.py"
+    assert "recent git change" in pack.items[0].reason
