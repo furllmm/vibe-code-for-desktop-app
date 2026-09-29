@@ -77,3 +77,17 @@ The current agent tool allow-list contains:
 Both are restricted to the selected workspace. Agent execution runs outside the Qt GUI thread so a slow provider request does not block the interface.
 
 The current provider adapter targets the Chat Completions contract; it does not claim compatibility with the separate Responses API.
+
+
+## Desktop preview
+
+The first preview MVP uses an explicit command and does not invoke a shell:
+
+```bash
+export VIBE_CODE_PREVIEW_COMMAND="python -m your_app"
+python -m vibe_code
+```
+
+The IDE provides **Run Preview** and **Stop Preview**. Preview stdout/stderr is captured and displayed in the chat output, and non-zero exits are reported as crash/error exits.
+
+The preview layer is adapter-based so language-specific detection/build/run behavior can be added without changing the IDE UI. The current generic adapter intentionally performs no automatic build.
