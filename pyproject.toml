@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vibe-code-for-desktop-app"
+version = "0.1.0"
+description = "AI-first vibe coding environment for desktop applications"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PySide6>=6.7,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+vibe-code = "vibe_code.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["vibe_code*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
