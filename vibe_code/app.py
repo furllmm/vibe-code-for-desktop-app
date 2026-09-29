@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         )
         self.context_panel.show_pack(pack)
         self.statusBar().showMessage(
-            f"Context: {len(pack.items)} files • ~{pack.estimated_tokens} tokens"
+            f"Context: {pack.summary()}"
         )
 
     def load_workspace(self, root: Path) -> None:
