@@ -42,7 +42,7 @@ from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.changes import ChangeManager
 from vibe_code.changes.panel import ChangePanel
 from vibe_code.workspace import Workspace
-from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
+from vibe_code.runtime import PreviewEngine, detect_preview_adapter
 
 
 class MainWindow(QMainWindow):
@@ -141,31 +141,20 @@ class MainWindow(QMainWindow):
         if self.workspace is None:
             self.statusBar().showMessage("Open a workspace first")
             return
-        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
         try:
-            if command_text:
-                command = tuple(shlex.split(command_text))
-                if not command:
-                    raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
-                adapter = GenericPreviewAdapter(PreviewConfig(command))
-                adapter_name = "configured command"
-            else:
-                entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
-                adapter = PythonPySide6Adapter(entrypoint)
-                adapter_name = "Python/PySide6"
-                if not adapter.detect(self.workspace.root):
-                    raise RuntimeError(
-                        "No PySide6 project detected. Set VIBE_CODE_PREVIEW_COMMAND "
-                        "or add a Python/PySide6 project."
-                    )
-            self._preview = PreviewEngine(
-                self.workspace.root,
-                adapter,
-            )
+            adapter = detect_preview_adapter(self.workspace.root)
+            if adapter is None:
+                raise RuntimeError(
+                    "No supported desktop project detected. "
+                    "Set VIBE_CODE_PREVIEW_COMMAND for a custom command."
+                )
+            self._preview = PreviewEngine(self.workspace.root, adapter)
             self._preview.build()
             self._preview.start()
             self._preview_timer.start()
-            self.statusBar().showMessage(f"Preview is running ({adapter_name})")
+            self.statusBar().showMessage(
+                f"Preview is running ({type(adapter).__name__})"
+            )
         except (OSError, ValueError, RuntimeError) as exc:
             self._preview = None
             self.statusBar().showMessage(f"Preview error: {exc}")
@@ -278,18 +267,11 @@ class MainWindow(QMainWindow):
     def _build_preview_engine(self) -> PreviewEngine | None:
         if self.workspace is None:
             return None
-        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
-        if command_text:
-            command = tuple(shlex.split(command_text))
-            if not command:
-                raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
-            adapter = GenericPreviewAdapter(PreviewConfig(command))
-        else:
-            entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
-            adapter = PythonPySide6Adapter(entrypoint)
-            if not adapter.detect(self.workspace.root):
-                return None
+        adapter = detect_preview_adapter(self.workspace.root)
+        if adapter is None:
+            return None
         return PreviewEngine(self.workspace.root, adapter)
+
     def _build_provider(self) -> OpenAICompatibleProvider:
         base_url = os.environ.get("VIBE_CODE_BASE_URL", "").strip()
         model = os.environ.get("VIBE_CODE_MODEL", "").strip()
