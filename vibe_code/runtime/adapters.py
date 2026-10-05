@@ -108,4 +108,4 @@ class NodeElectronAdapter(CommandProjectAdapter):
             value = data.get(key, {})
             if isinstance(value, dict):
                 deps.update(value)
-        return "electron" in deps and isinstance(data.get("scripts", {}).get("start"), str)
+        scripts = data.get("scripts", {})\n        return "electron" in deps and isinstance(scripts, dict) and isinstance(scripts.get("start"), str)
