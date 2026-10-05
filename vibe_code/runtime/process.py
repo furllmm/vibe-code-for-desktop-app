@@ -79,6 +79,20 @@ class ProcessManager:
             self._process = None
             return result
 
+    def wait(self, timeout: float | None = None) -> ProcessResult:
+        """Wait for the managed process to exit without treating it as an intentional stop."""
+        process = self._process
+        if process is None:
+            raise RuntimeError("process is not running")
+        returncode = process.wait(timeout=timeout)
+        with self._lock:
+            if self._process is process:
+                self._process = None
+        return ProcessResult(
+            returncode=returncode,
+            crashed=returncode != 0 and not self._stop_requested,
+        )
+
     def poll(self) -> ProcessResult | None:
         process = self._process
         if process is None:
