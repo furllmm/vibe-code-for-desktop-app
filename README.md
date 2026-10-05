@@ -108,6 +108,8 @@ Preview adapter detection now supports:
 - Python/PySide6
 - Rust/Cargo
 - Go
+- conventional C/C++ projects with main.cpp/main.cc/main.cxx/main.c
+- Gradle Java desktop projects that explicitly use the application plugin
 - .NET projects
 - Electron projects with an npm start script
 
