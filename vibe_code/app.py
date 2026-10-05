@@ -227,6 +227,14 @@ class MainWindow(QMainWindow):
                 RollbackChangesTool(changes),
             ]
             preview = self._build_preview_engine()
+            if preview is not None:
+                tools.extend(
+                    [
+                        RunPreviewTool(preview),
+                        GetPreviewLogsTool(preview),
+                        StopPreviewTool(preview),
+                    ]
+                )
             registry = ToolRegistry(tuple(tools))
             loop = AgentLoop(provider, registry)
             request = AgentRequest(prompt, pack)
