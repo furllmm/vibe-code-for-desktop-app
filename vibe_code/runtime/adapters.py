@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Sequence
 
 
@@ -44,12 +45,17 @@ class CommandProjectAdapter:
 
         process = ProcessManager(workspace)
         process.start(self.spec.build_command)
-        try:\n            result = process.wait(timeout=120.0)\n        except subprocess.TimeoutExpired:\n            process.stop()\n            raise RuntimeError("Preview build timed out after 120 seconds")
+        try:
+            result = process.wait(timeout=120.0)
+        except subprocess.TimeoutExpired:
+            process.stop()
+            raise RuntimeError("Preview build timed out after 120 seconds")
         if result.returncode != 0:
             output = process.read_available().strip()
             raise RuntimeError(
                 f"Preview build failed with exit code {result.returncode}"
-                + (f":\n{output}" if output else "")
+                + (f":
+{output}" if output else "")
             )
 
     def command(self, workspace: Path) -> Sequence[str]:
@@ -108,4 +114,5 @@ class NodeElectronAdapter(CommandProjectAdapter):
             value = data.get(key, {})
             if isinstance(value, dict):
                 deps.update(value)
-        scripts = data.get("scripts", {})\n        return "electron" in deps and isinstance(scripts, dict) and isinstance(scripts.get("start"), str)
+        scripts = data.get("scripts", {})
+        return "electron" in deps and isinstance(scripts, dict) and isinstance(scripts.get("start"), str)
