@@ -101,3 +101,14 @@ If VIBE_CODE_PREVIEW_COMMAND is not set, the desktop shell can automatically det
 ### Agent preview tools
 
 When a preview adapter is available, the coding agent receives an explicit allow-list of `run_preview`, `get_preview_logs`, and `stop_preview`. The agent is instructed to validate meaningful changes with the preview and inspect diagnostics before finishing. Preview process commands remain owned by the configured adapter rather than being supplied by the model.
+
+### Multi-toolchain preview adapters
+
+Preview adapter detection now supports:
+- Python/PySide6
+- Rust/Cargo
+- Go
+- .NET projects
+- Electron projects with an npm start script
+
+Detection is deterministic and keeps `VIBE_CODE_PREVIEW_COMMAND` as an explicit override. Toolchain build commands run without a shell and have a bounded 120-second build timeout.
