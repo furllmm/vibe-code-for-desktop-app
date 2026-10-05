@@ -54,8 +54,7 @@ class CommandProjectAdapter:
             output = process.read_available().strip()
             raise RuntimeError(
                 f"Preview build failed with exit code {result.returncode}"
-                + (f":
-{output}" if output else "")
+                + (f":\\n{output}" if output else "")
             )
 
     def command(self, workspace: Path) -> Sequence[str]:
