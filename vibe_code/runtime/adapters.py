@@ -91,6 +91,80 @@ class DotNetAdapter(CommandProjectAdapter):
         return any(workspace.glob(pattern) for pattern in self.marker_files)
 
 
+class CppAdapter(CommandProjectAdapter):
+    """Preview a small self-contained C/C++ project with a conventional main file."""
+
+    _sources = ("main.cpp", "main.cc", "main.cxx", "main.c")
+
+    def __init__(self) -> None:
+        super().__init__(
+            marker_files=self._sources,
+            command=("g++", ".vibe-code/build/preview"),
+            build_command=(),
+        )
+
+    def detect(self, workspace: Path) -> bool:
+        return workspace.is_dir() and any((workspace / name).is_file() for name in self._sources)
+
+    def build(self, workspace: Path) -> None:
+        source = next(
+            (workspace / name for name in self._sources if (workspace / name).is_file()),
+            None,
+        )
+        if source is None:
+            raise RuntimeError("No conventional C/C++ entrypoint found")
+        output = workspace / ".vibe-code" / "build" / "preview"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        compiler = "gcc" if source.suffix == ".c" else "g++"
+        process = subprocess.run(
+            (compiler, str(source), "-O0", "-g", "-o", str(output)),
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=120.0,
+            check=False,
+        )
+        if process.returncode != 0:
+            diagnostics = (process.stdout + process.stderr).strip()
+            raise RuntimeError(
+                f"C/C++ build failed with exit code {process.returncode}"
+                + (f":\\n{diagnostics}" if diagnostics else "")
+            )
+
+    def command(self, workspace: Path) -> Sequence[str]:
+        output = workspace / ".vibe-code" / "build" / "preview"
+        if not output.is_file():
+            raise RuntimeError("Build the C/C++ preview before starting it")
+        return (str(output),)
+
+
+class JavaGradleAdapter(CommandProjectAdapter):
+    """Detect Gradle desktop projects that explicitly use the application plugin."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            marker_files=("build.gradle", "build.gradle.kts"),
+            command=("./gradlew", "run"),
+        )
+
+    def detect(self, workspace: Path) -> bool:
+        if not workspace.is_dir():
+            return False
+        wrapper = workspace / "gradlew"
+        if not wrapper.is_file():
+            return False
+        for marker in self.marker_files:
+            path = workspace / marker
+            if path.is_file():
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                if "application" in text and "mainClass" in text:
+                    return True
+        return False
+
+
 class NodeElectronAdapter(CommandProjectAdapter):
     def __init__(self) -> None:
         super().__init__(
