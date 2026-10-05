@@ -44,7 +44,7 @@ class CommandProjectAdapter:
 
         process = ProcessManager(workspace)
         process.start(self.spec.build_command)
-        try:\n            result = process.wait(timeout=120.0)\n        except TimeoutError:\n            process.stop()\n            raise RuntimeError("Preview build timed out after 120 seconds")
+        try:\n            result = process.wait(timeout=120.0)\n        except subprocess.TimeoutExpired:\n            process.stop()\n            raise RuntimeError("Preview build timed out after 120 seconds")
         if result.returncode != 0:
             output = process.read_available().strip()
             raise RuntimeError(
