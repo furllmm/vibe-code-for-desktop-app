@@ -4,7 +4,7 @@ import os
 import shlex
 from pathlib import Path
 
-from .adapters import DotNetAdapter, GoAdapter, NodeElectronAdapter, RustAdapter
+from .adapters import CppAdapter, DotNetAdapter, GoAdapter, JavaGradleAdapter, NodeElectronAdapter, RustAdapter
 from .preview import GenericPreviewAdapter, PreviewAdapter, PreviewConfig
 from .python_adapter import PythonPySide6Adapter
 
@@ -31,6 +31,8 @@ def detect_preview_adapter(workspace: Path) -> PreviewAdapter | None:
         PythonPySide6Adapter(entrypoint),
         RustAdapter(),
         GoAdapter(),
+        CppAdapter(),
+        JavaGradleAdapter(),
         DotNetAdapter(),
         NodeElectronAdapter(),
     )
