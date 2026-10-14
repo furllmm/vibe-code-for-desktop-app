@@ -24,3 +24,4 @@ testpaths = ["tests"]
 
 [tool.setuptools.package-data]
 "vibe_code.skills" = ["builtin/**/*.md"]
+"vibe_code.templates" = ["builtin/**/*.json", "builtin/**/*.py", "builtin/**/*.toml"]
