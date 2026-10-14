@@ -65,9 +65,16 @@ class TemplateService:
         for target_name, source_name in mapping.items():
             target_rel = self._safe_relative_path(target_name, "target")
             source_rel = self._safe_relative_path(source_name, "source")
-            source = (template_dir / "files" / Path(*source_rel.parts)).resolve()
+            source_candidate = template_dir / "files" / Path(*source_rel.parts)
+            source_root = (template_dir / "files").resolve()
+            current_source = template_dir / "files"
+            for part in source_rel.parts:
+                current_source = current_source / part
+                if current_source.is_symlink():
+                    raise TemplateError(f"Refusing to follow symlink in template source: {source_name}")
+            source = source_candidate.resolve()
             try:
-                source.relative_to((template_dir / "files").resolve())
+                source.relative_to(source_root)
             except ValueError as exc:
                 raise TemplateError(f"Template source escapes its directory: {source_name}") from exc
             if not source.is_file() or source.is_symlink():
@@ -218,6 +225,10 @@ class TemplateService:
             or not files
         ):
             raise TemplateError(f"Invalid template manifest: {path}")
+        if any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for char in template_id):
+            raise TemplateError(f"Invalid template id in manifest: {path}")
+        if path.parent.name != template_id:
+            raise TemplateError(f"Template id does not match its directory: {path}")
         for target, source in files.items():
             TemplateService._safe_relative_path(target, "target")
             TemplateService._safe_relative_path(source, "source")
