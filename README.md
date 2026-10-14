@@ -133,4 +133,4 @@ Skills are Markdown `SKILL.md` files. Built-in skills cover desktop UI quality, 
 
 ## Coding templates
 
-The `templates/` directory contains an initial template catalog and a Python/PySide6 starter template. Template application is not yet wired into the UI; template assets are groundwork for a later preview-and-approve template picker. Existing files must never be silently overwritten when template application is implemented.
+Use **Templates…** in the workspace toolbar to preview and apply the built-in Python/PySide6 starter. The picker lists target files and identifies collisions before applying anything. Applying is a separate confirmation step; existing files are skipped by default and are never overwritten unless the caller explicitly opts in. Template paths are validated to prevent traversal and symlink-based writes. The packaged built-in template is available in source checkouts and installed builds.

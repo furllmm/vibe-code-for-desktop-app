@@ -37,7 +37,25 @@ class TaskStateStore:
         self.workspace = workspace.expanduser().resolve()
         self.path = self.workspace / ".vibe-code" / "task_state.json"
 
+    def _validate_path(self, *, create_parent: bool = False) -> bool:
+        parent = self.path.parent
+        if parent.is_symlink():
+            raise RuntimeError("Refusing to access task state through a .vibe-code symlink")
+        if parent.exists() and not parent.is_dir():
+            raise RuntimeError(".vibe-code exists but is not a directory")
+        if self.path.is_symlink():
+            raise RuntimeError("Refusing to access task state through a symlink")
+        if create_parent:
+            parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parent.resolve(strict=False).relative_to(self.workspace)
+        except ValueError as exc:
+            raise RuntimeError("Task state path escapes the workspace") from exc
+        return parent.exists()
+
     def load(self) -> TaskState | None:
+        if not self._validate_path():
+            return None
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -59,7 +77,9 @@ class TaskStateStore:
     def save(self, state: TaskState) -> None:
         if not state.original_prompt.strip():
             raise ValueError("original_prompt must not be empty")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._validate_path(create_parent=True)
+        # Recheck after directory creation to defend against replaced path components.
+        self._validate_path()
         payload = asdict(
             TaskState(
                 original_prompt=state.original_prompt,

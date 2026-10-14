@@ -35,3 +35,21 @@ def test_corrupt_task_state_reports_clear_error(tmp_path):
     store.path.write_text("{broken", encoding="utf-8")
     with pytest.raises(RuntimeError, match="Could not read saved task state"):
         store.load()
+
+
+def test_task_state_refuses_symlinked_storage_directory(tmp_path):
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    workspace.mkdir()
+    outside.mkdir()
+    (outside / "task_state.json").write_text(
+        json.dumps({"original_prompt": "outside", "status": "completed"}),
+        encoding="utf-8",
+    )
+    (workspace / ".vibe-code").symlink_to(outside, target_is_directory=True)
+
+    store = TaskStateStore(workspace)
+    with pytest.raises(RuntimeError, match="symlink"):
+        store.load()
+    with pytest.raises(RuntimeError, match="symlink"):
+        store.save(TaskState("Do not escape", "running"))
