@@ -356,9 +356,7 @@ class MainWindow(QMainWindow):
         try:
             if self._preview is not None:
                 self.stop_preview()
-            pack = self.context_service.build(
-                ContextRequest(prompt, self.workspace.root, token_budget=12000)
-            )
+            pack = self._build_context(prompt)
             self.context_panel.show_pack(pack)
             provider = self._build_provider()
             filesystem = WorkspaceFS(self.workspace.root)
