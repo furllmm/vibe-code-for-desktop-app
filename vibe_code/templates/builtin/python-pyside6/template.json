@@ -1,0 +1,9 @@
+{
+  "id": "python-pyside6",
+  "name": "Python + PySide6",
+  "description": "Minimal, modern Python desktop application starter",
+  "files": {
+    "src/main.py": "src/main.py",
+    "pyproject.toml": "pyproject.toml"
+  }
+}
