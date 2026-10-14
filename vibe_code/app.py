@@ -184,6 +184,11 @@ class MainWindow(QMainWindow):
 
         existing = [item.path for item in plan.files if item.exists]
         new_files = [item.path for item in plan.files if not item.exists]
+        content_preview = "\n\n".join(
+            f"{item.path}:\n{item.content[:500]}"
+            + ("\n… (preview truncated)" if len(item.content) > 500 else "")
+            for item in plan.files
+        )
         preview = (
             f"Template: {template['name']}\n\n"
             f"New files ({len(new_files)}):\n"
@@ -191,6 +196,8 @@ class MainWindow(QMainWindow):
             + "\n\nExisting files that will be skipped by default "
             f"({len(existing)}):\n"
             + ("\n".join(f"  • {path}" for path in existing) or "  (none)")
+            + "\n\nContent preview (up to 500 characters per file):\n"
+            + content_preview[:5000]
             + "\n\nNo files are changed until you approve the next step."
         )
         preview_box = QMessageBox(self)
