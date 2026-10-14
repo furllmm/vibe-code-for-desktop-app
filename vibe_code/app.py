@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._enhance_finished)
-        worker.failed.connect(self._agent_failed)
+        worker.failed.connect(self._enhance_failed)
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -401,6 +401,11 @@ class MainWindow(QMainWindow):
         self._thread = thread
         self._worker = worker
         thread.start()
+
+    def _enhance_failed(self, message: str) -> None:
+        # Enhancing a prompt is not a coding task; do not overwrite its checkpoint.
+        self.output.append(f"<b>Enhance error:</b> {html.escape(message)}")
+        self.statusBar().showMessage(f"Enhance error: {message}")
 
     def _enhance_finished(self, result: object) -> None:
         if not isinstance(result, str) or not result.strip():
