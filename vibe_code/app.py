@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import html
 import os
-import shlex
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QTimer
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets (
     QApplication,
     QFileDialog,
     QMainWindow,
+    QHBoxLayout,
+    QWidget,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -24,12 +25,14 @@ from PySide6.QtWidgets import (
 )
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
+from vibe_code.agent.enhance import EnhancementService
 from vibe_code.agent.orchestrator import AgentOrchestrator, OrchestrationResult, PreviewFailure, RepairResult
 from vibe_code.agent.recovery import RecoveryAction, RecoveryDecision
 from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
+from vibe_code.providers.base import AgentMessage, ProviderRequest
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -93,10 +96,20 @@ class MainWindow(QMainWindow):
         )
         self.run_button = QPushButton("Run Agent")
         self.run_button.clicked.connect(self.run_agent)
+        self.enhance_button = QPushButton("Enhance")
+        self.enhance_button.setToolTip(
+            "Turn your rough request into a detailed, project-aware brief for review."
+        )
+        self.enhance_button.clicked.connect(self.enhance_prompt)
+        action_row = QWidget()
+        action_layout = QHBoxLayout(action_row)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.addWidget(self.enhance_button)
+        action_layout.addWidget(self.run_button)
 
         chat_splitter.addWidget(self.output)
         chat_splitter.addWidget(self.prompt)
-        chat_splitter.addWidget(self.run_button)
+        chat_splitter.addWidget(action_row)
         chat_splitter.setSizes([480, 180, 48])
 
         self.context_panel = ContextPanel()
@@ -191,6 +204,66 @@ class MainWindow(QMainWindow):
             )
             self._preview = None
 
+
+    def enhance_prompt(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        prompt = self.prompt.toPlainText().strip()
+        if not prompt:
+            self.statusBar().showMessage("Describe your idea before enhancing it")
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another agent task is already running")
+            return
+        try:
+            pack = self.context_service.build(
+                ContextRequest(prompt, self.workspace.root, token_budget=12000)
+            )
+            self.context_panel.show_pack(pack)
+            provider = self._build_provider()
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.statusBar().showMessage(f"Enhance setup error: {exc}")
+            return
+
+        self.output.append(f"<b>Enhance request:</b> {html.escape(prompt)}")
+        self.enhance_button.setEnabled(False)
+        self.run_button.setEnabled(False)
+        self.statusBar().showMessage("Enhancing request using project context…")
+
+        thread = QThread(self)
+        worker = AgentWorker(
+            AgentLoop(provider, ToolRegistry()),
+            AgentRequest(prompt, pack),
+            work=lambda: EnhancementService.enhance(provider, prompt, pack),
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._enhance_finished)
+        worker.failed.connect(self._agent_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._agent_thread_finished)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _enhance_finished(self, result: object) -> None:
+        if not isinstance(result, str) or not result.strip():
+            self.output.append("<b>Enhance:</b> The provider returned an empty brief.")
+            self.statusBar().showMessage("Enhance returned no usable text.")
+            return
+        enhanced = result.strip()
+        self.prompt.setPlainText(enhanced)
+        self.output.append(
+            "<b>Enhanced brief (review before running):</b><br>"
+            + html.escape(enhanced).replace("\\n", "<br>")
+        )
+        self.statusBar().showMessage(
+            "Request enhanced. Review or edit it, then press Run Agent."
+        )
+
     def run_agent(self) -> None:
         if self.workspace is None:
             self.statusBar().showMessage("Open a workspace first")
@@ -255,6 +328,7 @@ class MainWindow(QMainWindow):
 
         self.output.append(f"<b>You:</b> {html.escape(prompt)}")
         self.run_button.setEnabled(False)
+        self.enhance_button.setEnabled(False)
         self.statusBar().showMessage("Agent is working…")
 
         thread = QThread(self)
@@ -465,6 +539,7 @@ class MainWindow(QMainWindow):
         self._thread = None
         self._worker = None
         self.run_button.setEnabled(True)
+        self.enhance_button.setEnabled(True)
         failure = self._pending_recovery_failure
         self._pending_recovery_failure = None
         if failure is not None:
