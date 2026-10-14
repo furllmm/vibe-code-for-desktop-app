@@ -114,3 +114,10 @@ Preview adapter detection now supports:
 - Electron projects with an npm start script
 
 Detection is deterministic and keeps `VIBE_CODE_PREVIEW_COMMAND` as an explicit override. Toolchain build commands run without a shell and have a bounded 120-second build timeout.
+
+
+## Request enhancement
+
+The **Enhance** action uses the configured AI provider and relevant project context to expand a rough idea into a structured implementation brief. It preserves explicit user intent, distinguishes suggestions from approved requirements, and returns the brief to the prompt editor for review. It does not start coding; the user reviews or edits the result and explicitly presses **Run Agent**.
+
+Enhancement is deliberately a separate, tool-free provider request. It cannot call filesystem, terminal, preview, or other agent tools.
