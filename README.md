@@ -121,3 +121,16 @@ Detection is deterministic and keeps `VIBE_CODE_PREVIEW_COMMAND` as an explicit 
 The **Enhance** action uses the configured AI provider and relevant project context to expand a rough idea into a structured implementation brief. It preserves explicit user intent, distinguishes suggestions from approved requirements, and returns the brief to the prompt editor for review. It does not start coding; the user reviews or edits the result and explicitly presses **Run Agent**.
 
 Enhancement is deliberately a separate, tool-free provider request. It cannot call filesystem, terminal, preview, or other agent tools.
+
+
+## Continue checkpoints
+
+The **Continue** button restores the last saved task brief from `.vibe-code/task_state.json`. It includes the original request and the last agent report, then asks the agent to inspect the current workspace/change history before deciding what remains. This is a task checkpoint, not a serialized provider conversation; the agent reconstructs context from current files rather than replaying stale tool calls.
+
+## Skills
+
+Skills are Markdown `SKILL.md` files. Built-in skills cover desktop UI quality, debugging, testing, security, and safe refactoring. Workspace-specific skills can be added under `.vibe-code/skills/<skill-name>/SKILL.md`. The skill loader reads candidate metadata and only injects a small number of relevant skills into the context.
+
+## Coding templates
+
+The `templates/` directory contains an initial template catalog and a Python/PySide6 starter template. Template application is not yet wired into the UI; template assets are groundwork for a later preview-and-approve template picker. Existing files must never be silently overwritten when template application is implemented.
