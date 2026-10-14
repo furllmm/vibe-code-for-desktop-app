@@ -74,13 +74,13 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         open_action = QAction("Open Workspace", self)
         open_action.triggered.connect(self.open_workspace)
-        templates_action = QAction("Templates…", self)
-        templates_action.triggered.connect(self.open_template_picker)
-        toolbar.addAction(templates_action)
         refresh_action = QAction("Refresh Context", self)
         refresh_action.triggered.connect(self.refresh_context)
         toolbar.addAction(open_action)
         toolbar.addAction(refresh_action)
+        templates_action = QAction("Templates…", self)
+        templates_action.triggered.connect(self.open_template_picker)
+        toolbar.addAction(templates_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -169,9 +169,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Templates", "No valid templates were found.")
             return
 
-        dialog = QMessageBox(self)
-        dialog.setWindowTitle("Choose a desktop app template")
-        dialog.setText("Select a starter template")
         choices = [f"{item['name']} — {item['description']}" for item in templates]
         selected, accepted = QInputDialog.getItem(
             self, "Template picker", "Template:", choices, 0, False
@@ -204,9 +201,7 @@ class MainWindow(QMainWindow):
         apply_button = preview_box.addButton(
             "Apply New Files", QMessageBox.ButtonRole.AcceptRole
         )
-        cancel_button = preview_box.addButton(
-            "Cancel", QMessageBox.ButtonRole.RejectRole
-        )
+        preview_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         preview_box.exec()
         if preview_box.clickedButton() is not apply_button:
             return
