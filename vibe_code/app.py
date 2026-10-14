@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         self.prompt.setPlainText(enhanced)
         self.output.append(
             "<b>Enhanced brief (review before running):</b><br>"
-            + html.escape(enhanced).replace("\\n", "<br>")
+            + html.escape(enhanced).replace("\n", "<br>")
         )
         self.statusBar().showMessage(
             "Request enhanced. Review or edit it, then press Run Agent."
