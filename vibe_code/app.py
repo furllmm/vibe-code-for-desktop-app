@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTreeWidget,
     QTreeWidgetItem,
+    QInputDialog,
 )
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
@@ -34,6 +35,7 @@ from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
 from vibe_code.skills.service import SkillService
+from vibe_code.templates.service import TemplateService, TemplateError
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -57,6 +59,7 @@ class MainWindow(QMainWindow):
         self.workspace: Workspace | None = None
         self.context_service = ContextService()
         self.skill_service = SkillService()
+        self.template_service = TemplateService()
         self._resume_requested = False
         self._task_original_prompt = ""
         self._thread: QThread | None = None
@@ -71,6 +74,9 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         open_action = QAction("Open Workspace", self)
         open_action.triggered.connect(self.open_workspace)
+        templates_action = QAction("Templates…", self)
+        templates_action.triggered.connect(self.open_template_picker)
+        toolbar.addAction(templates_action)
         refresh_action = QAction("Refresh Context", self)
         refresh_action.triggered.connect(self.refresh_context)
         toolbar.addAction(open_action)
@@ -149,6 +155,81 @@ class MainWindow(QMainWindow):
         self._refresh_continue_state()
         self.refresh_context()
         self.statusBar().showMessage(f"Workspace: {self.workspace.root}")
+
+    def open_template_picker(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace before choosing a template")
+            return
+        try:
+            templates = self.template_service.list_templates()
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Templates unavailable", str(exc))
+            return
+        if not templates:
+            QMessageBox.information(self, "Templates", "No valid templates were found.")
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Choose a desktop app template")
+        dialog.setText("Select a starter template")
+        choices = [f"{item['name']} — {item['description']}" for item in templates]
+        selected, accepted = QInputDialog.getItem(
+            self, "Template picker", "Template:", choices, 0, False
+        )
+        if not accepted:
+            return
+        template = templates[choices.index(selected)]
+        try:
+            plan = self.template_service.plan(template["id"], self.workspace.root)
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Template preview failed", str(exc))
+            return
+
+        existing = [item.path for item in plan.files if item.exists]
+        new_files = [item.path for item in plan.files if not item.exists]
+        preview = (
+            f"Template: {template['name']}\n\n"
+            f"New files ({len(new_files)}):\n"
+            + ("\n".join(f"  + {path}" for path in new_files) or "  (none)")
+            + "\n\nExisting files that will be skipped by default "
+            f"({len(existing)}):\n"
+            + ("\n".join(f"  • {path}" for path in existing) or "  (none)")
+            + "\n\nNo files are changed until you approve the next step."
+        )
+        preview_box = QMessageBox(self)
+        preview_box.setWindowTitle("Review template changes")
+        preview_box.setIcon(QMessageBox.Icon.Information)
+        preview_box.setText("Template application preview")
+        preview_box.setInformativeText(preview)
+        apply_button = preview_box.addButton(
+            "Apply New Files", QMessageBox.ButtonRole.AcceptRole
+        )
+        cancel_button = preview_box.addButton(
+            "Cancel", QMessageBox.ButtonRole.RejectRole
+        )
+        preview_box.exec()
+        if preview_box.clickedButton() is not apply_button:
+            return
+
+        try:
+            result = self.template_service.apply(
+                template["id"], self.workspace.root, overwrite=False
+            )
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Template application failed", str(exc))
+            return
+        self.load_workspace(self.workspace.root)
+        self.refresh_context()
+        created = "\n".join(result["created"]) or "(no new files created)"
+        skipped = "\n".join(result["skipped"])
+        message = f"Created files:\n{created}"
+        if skipped:
+            message += f"\n\nSkipped existing files (not overwritten):\n{skipped}"
+        QMessageBox.information(self, "Template applied", message)
+        self.statusBar().showMessage(
+            f"Template applied: {len(result['created'])} created, "
+            f"{len(result['skipped'])} skipped"
+        )
 
     def refresh_context(self) -> None:
         if self.workspace is None:
