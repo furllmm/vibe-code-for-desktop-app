@@ -54,7 +54,7 @@ class CommandProjectAdapter:
             output = process.read_available().strip()
             raise RuntimeError(
                 f"Preview build failed with exit code {result.returncode}"
-                + (f":\\n{output}" if output else "")
+                + (f":\n{output}" if output else "")
             )
 
     def command(self, workspace: Path) -> Sequence[str]:
@@ -128,14 +128,12 @@ class CppAdapter(CommandProjectAdapter):
             diagnostics = (process.stdout + process.stderr).strip()
             raise RuntimeError(
                 f"C/C++ build failed with exit code {process.returncode}"
-                + (f":\\n{diagnostics}" if diagnostics else "")
+                + (f":\n{diagnostics}" if diagnostics else "")
             )
 
     def command(self, workspace: Path) -> Sequence[str]:
-        output = workspace / ".vibe-code" / "build" / "preview"
-        if not output.is_file():
-            raise RuntimeError("Build the C/C++ preview before starting it")
-        return (str(output),)
+        # PreviewEngine builds before asking the adapter for its run command.
+        return (str(workspace / ".vibe-code" / "build" / "preview"),)
 
 
 class JavaGradleAdapter(CommandProjectAdapter):
