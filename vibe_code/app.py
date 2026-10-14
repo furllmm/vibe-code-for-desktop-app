@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, QTimer
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets (
+from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QMainWindow,
@@ -32,7 +32,6 @@ from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
-from vibe_code.providers.base import AgentMessage, ProviderRequest
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
