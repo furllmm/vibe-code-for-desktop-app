@@ -128,3 +128,17 @@ def test_instruction_limit_and_noop_proposal(tmp_path):
         session.propose("x" * (4 * 1024 + 1))
     with pytest.raises(ValueError, match="no effective"):
         session.propose("Change")
+
+def test_rollback_preflights_entire_project_change_set(tmp_path):
+    (tmp_path / "a.py").write_text("a")
+    (tmp_path / "b.py").write_text("b")
+    manager = ChangeManager(WorkspaceFS(tmp_path))
+    changes = manager.write_many({
+        "a.py": ("A", hashlib.sha256(b"a").hexdigest()),
+        "b.py": ("B", hashlib.sha256(b"b").hexdigest()),
+    })
+    (tmp_path / "b.py").write_text("external")
+    with pytest.raises(RuntimeError, match="changed after the recorded write"):
+        manager.rollback(changes.id)
+    assert (tmp_path / "a.py").read_text() == "A"
+    assert (tmp_path / "b.py").read_text() == "external"
