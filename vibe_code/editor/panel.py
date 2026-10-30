@@ -166,7 +166,7 @@ class CodeEditor(QPlainTextEdit):
                 continue
             try:
                 raw = path.read_bytes()
-                if len(raw) > MAX_EDITABLE_FILE_BYTES or b"\\x00" in raw:
+                if len(raw) > MAX_EDITABLE_FILE_BYTES or b"\x00" in raw:
                     continue
                 text = raw.decode("utf-8-sig")
             except (OSError, UnicodeDecodeError):
