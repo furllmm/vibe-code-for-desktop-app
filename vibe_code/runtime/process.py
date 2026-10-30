@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import os
 import subprocess
 from threading import Lock, Thread
 from typing import BinaryIO, Sequence
@@ -35,7 +36,7 @@ class ProcessManager:
     def _drain_output(self, stream: BinaryIO) -> None:
         try:
             while True:
-                chunk = stream.read(65536)
+                chunk = os.read(stream.fileno(), 65536)
                 if not chunk:
                     break
                 with self._lock:
