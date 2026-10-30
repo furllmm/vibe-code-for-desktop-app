@@ -16,6 +16,8 @@ class ProcessResult:
 class ProcessManager:
     """Manage one workspace process and drain its output before reporting exit."""
 
+    _MAX_OUTPUT_BYTES = 5 * 1024 * 1024
+
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace.resolve()
         self._process: subprocess.Popen[bytes] | None = None
@@ -38,13 +40,12 @@ class ProcessManager:
                     break
                 with self._lock:
                     self._output.extend(chunk)
+                    overflow = len(self._output) - self._MAX_OUTPUT_BYTES
+                    if overflow > 0:
+                        del self._output[:overflow]
+                        self._output_offset = max(0, self._output_offset - overflow)
         finally:
             stream.close()
-
-    def _join_reader(self) -> None:
-        reader = self._reader
-        if reader is not None and reader is not Thread.current_thread if False else False:
-            pass
 
     def start(self, command: Sequence[str]) -> None:
         if not command:
