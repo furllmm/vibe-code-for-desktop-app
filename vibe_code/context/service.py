@@ -9,6 +9,15 @@ from ..index.indexer import FileIndex
 from .models import ContextItem, ContextPack, ContextRequest
 
 _IGNORE_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
+_MAX_CONTEXT_FILES = 20_000
+_MAX_CONTEXT_SCAN_BYTES = 256 * 1024 * 1024
+_SENSITIVE_NAMES = {
+    ".env", ".env.local", ".env.production", ".env.development",
+    "secrets", "secrets.json", "secrets.yaml", "secrets.yml",
+    "credentials", "credentials.json", "credentials.yaml", "credentials.yml",
+    "id_rsa", "id_ed25519",
+}
+_SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"}
 _TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".yaml", ".yml",
     ".md", ".txt", ".ini", ".cfg", ".xml", ".ui", ".qml", ".cs", ".cpp",
@@ -54,17 +63,30 @@ class ContextService:
 
     def _discover(self, root: Path) -> list[Path]:
         paths: list[Path] = []
+        scanned_bytes = 0
         for path in root.rglob("*"):
-            if not path.is_file() or any(part in _IGNORE_DIRS for part in path.parts):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                relative = path.relative_to(root)
+            except ValueError:
+                continue
+            if any(part in _IGNORE_DIRS for part in relative.parts):
+                continue
+            if path.name.lower() in _SENSITIVE_NAMES or path.suffix.lower() in _SENSITIVE_SUFFIXES:
                 continue
             if path.suffix.lower() not in _TEXT_EXTENSIONS:
                 continue
             try:
-                if path.stat().st_size > 512_000:
-                    continue
+                size = path.stat().st_size
             except OSError:
                 continue
+            if size > 512_000:
+                continue
+            if len(paths) >= _MAX_CONTEXT_FILES or scanned_bytes + size > _MAX_CONTEXT_SCAN_BYTES:
+                break
             paths.append(path)
+            scanned_bytes += size
         return paths
 
     def _score_metadata(
