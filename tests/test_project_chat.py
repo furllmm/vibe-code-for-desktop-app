@@ -63,6 +63,7 @@ def test_project_chat_retrieves_relevant_context_for_each_turn(tmp_path):
     assert "untrusted" in first.messages[0].content
     assert "src/main.py" in first.messages[1].content
     assert "def main" in first.messages[1].content
+    assert str(tmp_path) not in first.messages[1].content
     assert "Explain the main function" in second.messages[-3].content
     assert second.messages[-2].content == "first answer"
     assert "What happens if it returns None?" in second.messages[-1].content
