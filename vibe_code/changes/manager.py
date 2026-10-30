@@ -130,6 +130,8 @@ class ChangeManager:
             if not path.exists() or not path.is_file():
                 raise ValueError(f"Project edit target is not an existing regular file: {normalized}")
             original = path.read_bytes()
+            if len(original) > 2 * 1024 * 1024:
+                raise ValueError(f"Target exceeds the 2 MiB file limit: {normalized}")
             if b"\x00" in original:
                 raise ValueError(f"Binary files cannot be edited: {normalized}")
             before_hash = self._sha256(original)
