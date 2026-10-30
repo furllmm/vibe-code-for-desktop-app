@@ -13,9 +13,15 @@ class PackagingEngine:
     def __init__(self, workspace: Path, registry: PackagingRegistry | None = None) -> None:
         self.workspace = workspace.resolve()
         self.registry = registry or PackagingRegistry()
+        self._issued_plans: set[PackagingPlan] = set()
 
     def create_plan(self, request: PackageRequest) -> PackagingPlan:
-        return self.registry.create_plan(self.workspace, request)
+        plan = self.registry.create_plan(self.workspace, request)
+        output = plan.output_dir.resolve()
+        if output != self.workspace and self.workspace not in output.parents:
+            raise ValueError("Package output must stay inside the workspace")
+        self._issued_plans.add(plan)
+        return plan
 
     def execute(
         self,
@@ -23,6 +29,8 @@ class PackagingEngine:
         *,
         trusted_workspace: bool = False,
     ) -> PackagingResult:
+        if plan not in self._issued_plans:
+            raise ValueError("Packaging plan was not created by this engine")
         if not trusted_workspace:
             raise PermissionError(
                 "Packaging can execute project-controlled build hooks. "
