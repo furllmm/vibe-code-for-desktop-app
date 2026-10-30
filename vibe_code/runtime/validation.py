@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -86,6 +87,14 @@ class ProjectValidator:
             self.preview.stop()
             return ValidationResult(False, tuple(steps), False)
 
+        post_build_command = self._post_build_test_command()
+        if post_build_command is not None:
+            post_build = self._run_command("Build-system tests", post_build_command)
+            steps.append(post_build)
+            if not post_build.success:
+                self.preview.stop()
+                return ValidationResult(False, tuple(steps), False)
+
         try:
             self.preview.start()
         except Exception as exc:
@@ -147,6 +156,23 @@ class ProjectValidator:
         if python_tests:
             return (sys.executable, "-m", "pytest", "-q")
         return None
+
+    def _post_build_test_command(self) -> tuple[str, ...] | None:
+        cmake_file = self.workspace / "CMakeLists.txt"
+        if not cmake_file.is_file():
+            return None
+        try:
+            source = cmake_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        has_ctest = re.search(
+            r"(?im)^\\s*(?:enable_testing\\s*\\(|include\\s*\\(\\s*CTest\\b)",
+            source,
+        )
+        if not has_ctest:
+            return None
+        build_dir = self.workspace / ".vibe-code" / "build" / "cmake"
+        return ("ctest", "--test-dir", str(build_dir), "--output-on-failure")
 
     def _run_command(self, name: str, command: Sequence[str]) -> ValidationStep:
         try:
