@@ -166,7 +166,7 @@ class ProjectValidator:
         except (OSError, UnicodeError):
             return None
         has_ctest = re.search(
-            r"(?im)^\\s*(?:enable_testing\\s*\\(|include\\s*\\(\\s*CTest\\b)",
+            r"(?im)^\s*(?:enable_testing\s*\(|include\s*\(\s*CTest\b)",
             source,
         )
         if not has_ctest:
