@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import time
 
 from vibe_code.runtime.preview import GenericPreviewAdapter, PreviewConfig, PreviewEngine
@@ -8,7 +9,7 @@ from vibe_code.tools.preview_tools import GetPreviewLogsTool, RunPreviewTool, St
 def make_engine(tmp_path: Path) -> PreviewEngine:
     return PreviewEngine(
         tmp_path,
-        GenericPreviewAdapter(PreviewConfig(("python", "-c", "print('tool-preview')"))),
+        GenericPreviewAdapter(PreviewConfig((sys.executable, "-u", "-c", "print('tool-preview')"))),
     )
 
 
