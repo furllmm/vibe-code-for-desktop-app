@@ -83,6 +83,83 @@ class ChangeManager:
         self._save(change_set)
         return record
 
+    def write_many(
+        self,
+        replacements: dict[str, tuple[str, str]],
+    ) -> ChangeSet:
+        """Apply a reviewed multi-file edit as one rollback set after full preflight.
+
+        Each value is (new UTF-8 text, expected original SHA-256). Writes are
+        individually atomic; if a later write or manifest save fails, earlier
+        writes are restored best-effort before the error is propagated.
+        """
+        if not replacements:
+            raise ValueError("No project changes to apply")
+        if len(replacements) > 10:
+            raise ValueError("A project edit is limited to 10 files")
+
+        prepared = []
+        seen: set[str] = set()
+        total_bytes = 0
+        for relative_path, (content, expected_sha256) in replacements.items():
+            normalized = Path(relative_path).as_posix()
+            while normalized.startswith("./"):
+                normalized = normalized[2:]
+            if normalized in seen:
+                raise ValueError(f"Duplicate project edit target: {normalized}")
+            seen.add(normalized)
+            if normalized == ".vibe-code" or normalized.startswith(".vibe-code/"):
+                raise PermissionError("IDE state files cannot be edited by project AI")
+            if not isinstance(content, str):
+                raise TypeError("Project edit content must be text")
+            encoded = content.encode("utf-8")
+            total_bytes += len(encoded)
+            if len(encoded) > 2 * 1024 * 1024 or total_bytes > 4 * 1024 * 1024:
+                raise ValueError("Project edit exceeds the file or total size limit")
+            path = self.filesystem.resolve(normalized)
+            if path.is_symlink() or not path.exists() or not path.is_file():
+                raise ValueError(f"Project edit target is not an existing regular file: {normalized}")
+            original = path.read_bytes()
+            if b"\x00" in original:
+                raise ValueError(f"Binary files cannot be edited: {normalized}")
+            before_hash = self._sha256(original)
+            if before_hash != expected_sha256:
+                raise RuntimeError(f"Cannot apply reviewed edit: {normalized} changed after preview")
+            try:
+                original.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"Target is not UTF-8 text: {normalized}") from exc
+            prepared.append((normalized, path, original, encoded, before_hash))
+
+        change_id = uuid.uuid4().hex
+        records: list[ChangeRecord] = []
+        written: list[tuple[Path, bytes]] = []
+        try:
+            for normalized, path, original, encoded, before_hash in prepared:
+                backup_path = self.state_root / change_id / normalized
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                self._atomic_write(backup_path, original)
+                self._atomic_write(path, encoded)
+                written.append((path, original))
+                after = path.read_bytes()
+                records.append(ChangeRecord(
+                    path=normalized,
+                    existed_before=True,
+                    before_sha256=before_hash,
+                    after_sha256=self._sha256(after),
+                    backup_path=self._relative_state(backup_path),
+                ))
+            change_set = ChangeSet(change_id, tuple(records))
+            self._save(change_set)
+            return change_set
+        except Exception:
+            for path, original in reversed(written):
+                try:
+                    self._atomic_write(path, original)
+                except OSError:
+                    pass
+            raise
+
     def list_changes(self) -> tuple[ChangeSet, ...]:
         data = self._read_manifest()
         result: list[ChangeSet] = []
