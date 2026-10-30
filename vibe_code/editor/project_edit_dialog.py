@@ -140,16 +140,17 @@ class ProjectEditDialog(QDialog):
         thread.start()
 
     def _set_actions_enabled(self, enabled: bool) -> None:
+        idle = enabled and self._thread is None
         has_proposal = self.proposal is not None
-        self.apply_button.setEnabled(enabled and has_proposal)
+        self.apply_button.setEnabled(idle and has_proposal)
         self.validate_button.setEnabled(
-            enabled and has_proposal and self.validator is not None
+            idle and has_proposal and self.validator is not None
         )
         self.repair_button.setEnabled(
-            enabled and self.validation_result is not None
+            idle and self.validation_result is not None
             and not self.validation_result.success
         )
-        self.close_button.setEnabled(enabled)
+        self.close_button.setEnabled(idle)
 
     def _proposal_ready(self, value: object) -> None:
         if not isinstance(value, ProjectEditProposal):
