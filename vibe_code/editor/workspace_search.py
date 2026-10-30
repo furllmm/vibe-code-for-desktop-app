@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -13,6 +14,8 @@ MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
 MAX_SEARCH_FILES = 20_000
 MAX_SEARCH_RESULTS = 5_000
 MAX_REPLACE_FILES = 100
+MAX_REPLACE_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_SEARCH_TOTAL_BYTES = 256 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -92,29 +95,29 @@ def search_workspace(
         raise ValueError("Search query must not be empty")
     if max_results < 1 or max_results > MAX_SEARCH_RESULTS:
         raise ValueError(f"max_results must be between 1 and {MAX_SEARCH_RESULTS}")
-    needle = query if case_sensitive else query.casefold()
     results: list[SearchMatch] = []
+    scanned_bytes = 0
     for path in _iter_text_files(workspace):
         loaded = _read_text(path)
         if loaded is None:
             continue
-        _, content = loaded
+        raw, content = loaded
+        scanned_bytes += len(raw)
+        if scanned_bytes > MAX_SEARCH_TOTAL_BYTES:
+            raise ValueError(
+                f"Workspace search exceeded the {MAX_SEARCH_TOTAL_BYTES // (1024 * 1024)} MiB scan limit"
+            )
+        expression = re.compile(re.escape(query), 0 if case_sensitive else re.IGNORECASE)
         for line_number, line in enumerate(content.splitlines(), 1):
-            haystack = line if case_sensitive else line.casefold()
-            start = 0
-            while True:
-                index = haystack.find(needle, start)
-                if index < 0:
-                    break
+            for match in expression.finditer(line):
                 results.append(SearchMatch(
                     path=path,
                     line=line_number,
-                    column=index + 1,
+                    column=match.start() + 1,
                     text=line[:500],
                 ))
                 if len(results) >= max_results:
                     return results
-                start = index + max(1, len(needle))
     return results
 
 
@@ -127,23 +130,27 @@ def build_replacement_plan(
 ) -> ReplacementPlan:
     if not query:
         raise ValueError("Search query must not be empty")
-    needle = query if case_sensitive else query.casefold()
     planned: list[ReplacementFile] = []
+    planned_bytes = 0
+    scanned_bytes = 0
+    pattern = re.compile(re.escape(query), 0 if case_sensitive else re.IGNORECASE)
     for path in _iter_text_files(workspace):
         loaded = _read_text(path)
         if loaded is None:
             continue
         raw, content = loaded
-        if case_sensitive:
-            count = content.count(query)
-            updated = content.replace(query, replacement)
-        else:
-            # Preserve the original spelling of unmatched text while replacing
-            # every case-insensitive occurrence.
-            import re
-            pattern = re.compile(re.escape(query), re.IGNORECASE)
-            updated, count = pattern.subn(lambda _match: replacement, content)
+        scanned_bytes += len(raw)
+        if scanned_bytes > MAX_SEARCH_TOTAL_BYTES:
+            raise ValueError(
+                f"Replacement preview exceeded the {MAX_SEARCH_TOTAL_BYTES // (1024 * 1024)} MiB scan limit"
+            )
+        updated, count = pattern.subn(lambda _match: replacement, content)
         if count:
+            planned_bytes += len(raw)
+            if planned_bytes > MAX_REPLACE_TOTAL_BYTES:
+                raise ValueError(
+                    f"Replacement preview exceeds the {MAX_REPLACE_TOTAL_BYTES // (1024 * 1024)} MiB total file limit"
+                )
             planned.append(ReplacementFile(
                 path=path,
                 before_hash=hashlib.sha256(raw).hexdigest(),
