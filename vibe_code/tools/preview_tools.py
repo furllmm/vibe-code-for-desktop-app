@@ -38,6 +38,7 @@ class GetPreviewLogsTool:
 
     def __init__(self, preview: PreviewEngine) -> None:
         self.preview = preview
+        self._pending_logs = ""
 
     def execute(self, arguments: dict[str, object]) -> ToolResult:
         if arguments:
@@ -48,6 +49,14 @@ class GetPreviewLogsTool:
             logs = self.preview.read_logs()
             status = self.preview.poll()
             logs += self.preview.read_logs()
+            if status is None:
+                self._pending_logs += logs
+            else:
+                # Preserve output returned by earlier polling calls so the final
+                # exit report remains self-contained for callers that only inspect
+                # the last poll result.
+                logs = self._pending_logs + logs
+                self._pending_logs = ""
             parts = []
             if logs:
                 parts.append(logs.rstrip())

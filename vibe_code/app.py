@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QTabWidget,
     QMessageBox,
+    QInputDialog,
     QTreeWidget,
     QTreeWidgetItem,
 )
@@ -95,6 +96,10 @@ class MainWindow(QMainWindow):
         find_action.setShortcut(QKeySequence.StandardKey.Find)
         find_action.triggered.connect(self.show_editor_find)
         toolbar.addAction(find_action)
+        goto_action = QAction("Go to Line", self)
+        goto_action.setShortcut("Ctrl+G")
+        goto_action.triggered.connect(self.go_to_editor_line)
+        toolbar.addAction(goto_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -201,6 +206,20 @@ class MainWindow(QMainWindow):
         if self.editor_panel is not None:
             self.center_tabs.setCurrentWidget(self.editor_panel)
             self.editor_panel.show_find()
+
+    def go_to_editor_line(self) -> None:
+        if self.editor_panel is None or self.editor_panel.tabs.currentWidget() is None:
+            self.statusBar().showMessage("Open a file in the editor first")
+            return
+        from vibe_code.editor.panel import CodeEditor
+        editor = self.editor_panel.tabs.currentWidget()
+        if not isinstance(editor, CodeEditor):
+            return
+        line, accepted = QInputDialog.getInt(
+            self, "Go to Line", "Line number:", 1, 1, max(1, editor.blockCount())
+        )
+        if accepted:
+            self.editor_panel.go_to_line(line)
 
     def open_packaging(self) -> None:
         if self.workspace is None:
