@@ -142,3 +142,13 @@ def test_rollback_preflights_entire_project_change_set(tmp_path):
         manager.rollback(changes.id)
     assert (tmp_path / "a.py").read_text() == "A"
     assert (tmp_path / "b.py").read_text() == "external"
+
+def test_write_many_rejects_symlink_targets(tmp_path):
+    (tmp_path / "real.py").write_text("original")
+    (tmp_path / "link.py").symlink_to(tmp_path / "real.py")
+    manager = ChangeManager(WorkspaceFS(tmp_path))
+    with pytest.raises(PermissionError, match="Symlink"):
+        manager.write_many({
+            "link.py": ("changed", hashlib.sha256(b"original").hexdigest())
+        })
+    assert (tmp_path / "real.py").read_text() == "original"
