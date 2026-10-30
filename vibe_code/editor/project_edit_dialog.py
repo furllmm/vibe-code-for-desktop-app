@@ -57,6 +57,7 @@ class ProjectEditDialog(QDialog):
         self.validation_result: ValidationResult | None = None
         self._thread: QThread | None = None
         self._worker: _Worker | None = None
+        self._pending_accept = False
 
         self.setWindowTitle("Review AI Project Changes")
         self.resize(980, 700)
@@ -193,6 +194,9 @@ class ProjectEditDialog(QDialog):
         self._thread = None
         self._worker = None
         self._set_actions_enabled(True)
+        if self._pending_accept:
+            self._pending_accept = False
+            super().accept()
 
     def _apply_current_proposal(self) -> bool:
         if self.proposal is None:
