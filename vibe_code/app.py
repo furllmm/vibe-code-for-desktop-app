@@ -41,6 +41,7 @@ from vibe_code.tools.preview_tools import GetPreviewLogsTool, RunPreviewTool, St
 from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.changes import ChangeManager
 from vibe_code.changes.panel import ChangePanel
+from vibe_code.packaging.dialog import PackagingDialog
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
@@ -81,6 +82,9 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_context)
         toolbar.addAction(open_action)
         toolbar.addAction(refresh_action)
+        package_action = QAction("Package Project", self)
+        package_action.triggered.connect(self.open_packaging)
+        toolbar.addAction(package_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -137,6 +141,13 @@ class MainWindow(QMainWindow):
         self.load_workspace(self.workspace.root)
         self.refresh_context()
         self.statusBar().showMessage(f"Workspace: {self.workspace.root}")
+
+    def open_packaging(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace before packaging")
+            return
+        dialog = PackagingDialog(self.workspace.root, self)
+        dialog.exec()
 
     def refresh_context(self) -> None:
         if self.workspace is None:
