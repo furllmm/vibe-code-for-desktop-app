@@ -42,7 +42,18 @@ from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.changes import ChangeManager
 from vibe_code.changes.panel import ChangePanel
 from vibe_code.workspace import Workspace
-from vibe_code.runtime import GenericPreviewAdapter, PreviewConfig, PreviewEngine, PythonPySide6Adapter
+from vibe_code.runtime import (
+    AdapterRegistry,
+    DotNetAdapter,
+    ElectronAdapter,
+    GenericPreviewAdapter,
+    GoAdapter,
+    NodeScriptAdapter,
+    PreviewConfig,
+    PreviewEngine,
+    PythonPySide6Adapter,
+    RustCargoAdapter,
+)
 
 
 class MainWindow(QMainWindow):
@@ -141,31 +152,20 @@ class MainWindow(QMainWindow):
         if self.workspace is None:
             self.statusBar().showMessage("Open a workspace first")
             return
-        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
         try:
-            if command_text:
-                command = tuple(shlex.split(command_text))
-                if not command:
-                    raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
-                adapter = GenericPreviewAdapter(PreviewConfig(command))
-                adapter_name = "configured command"
-            else:
-                entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
-                adapter = PythonPySide6Adapter(entrypoint)
-                adapter_name = "Python/PySide6"
-                if not adapter.detect(self.workspace.root):
-                    raise RuntimeError(
-                        "No PySide6 project detected. Set VIBE_CODE_PREVIEW_COMMAND "
-                        "or add a Python/PySide6 project."
-                    )
-            self._preview = PreviewEngine(
-                self.workspace.root,
-                adapter,
-            )
-            self._preview.build()
-            self._preview.start()
+            preview = self._build_preview_engine()
+            if preview is None:
+                raise RuntimeError(
+                    "No supported desktop project detected. Configure "
+                    "VIBE_CODE_PREVIEW_COMMAND or add a supported project manifest."
+                )
+            self._preview = preview
+            preview.build()
+            preview.start()
             self._preview_timer.start()
-            self.statusBar().showMessage(f"Preview is running ({adapter_name})")
+            self.statusBar().showMessage(
+                f"Preview is running ({type(preview.adapter).__name__})"
+            )
         except (OSError, ValueError, RuntimeError) as exc:
             self._preview = None
             self.statusBar().showMessage(f"Preview error: {exc}")
@@ -286,8 +286,16 @@ class MainWindow(QMainWindow):
             adapter = GenericPreviewAdapter(PreviewConfig(command))
         else:
             entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
-            adapter = PythonPySide6Adapter(entrypoint)
-            if not adapter.detect(self.workspace.root):
+            registry = AdapterRegistry((
+                PythonPySide6Adapter(entrypoint),
+                RustCargoAdapter(),
+                GoAdapter(),
+                DotNetAdapter(),
+                ElectronAdapter(),
+                NodeScriptAdapter(),
+            ))
+            adapter = registry.detect(self.workspace.root)
+            if adapter is None:
                 return None
         return PreviewEngine(self.workspace.root, adapter)
     def _build_provider(self) -> OpenAICompatibleProvider:
