@@ -86,6 +86,10 @@ class ProcessManager:
         returncode = process.poll()
         if returncode is None:
             return None
+        # Wait for the background reader to drain the closed pipe before exit.
+        reader = self._reader
+        if reader is not None:
+            reader.join(timeout=1.0)
         with self._lock:
             if self._process is process:
                 self._process = None
