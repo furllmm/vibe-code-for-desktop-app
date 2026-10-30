@@ -105,3 +105,39 @@ def test_packaging_engine_requires_issued_plan_and_explicit_trust(tmp_path):
 def test_packaging_registry_rejects_unknown_backend(tmp_path):
     with pytest.raises(ValueError, match="Unsupported packaging backend"):
         PackagingEngine(tmp_path).create_plan(PackageRequest("unknown", "Demo"))
+
+
+
+def test_cpack_plan_uses_generated_config_and_canonical_generator(tmp_path, monkeypatch):
+    config = tmp_path / ".vibe-code" / "build" / "cmake" / "CPackConfig.cmake"
+    config.parent.mkdir(parents=True)
+    config.write_text("set(CPACK_PACKAGE_NAME Demo)", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(Demo)", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/cpack")
+
+    from vibe_code.packaging import CPackAdapter
+
+    plan = CPackAdapter().create_plan(
+        tmp_path,
+        PackageRequest("cpack", "Demo", package_type="dragndrop"),
+    )
+
+    assert plan.command[0] == "/usr/bin/cpack"
+    assert plan.command[plan.command.index("-G") + 1] == "DragNDrop"
+    assert not plan.output_dir.exists()
+
+
+def test_cpack_rejects_unsupported_generator(tmp_path, monkeypatch):
+    config = tmp_path / ".vibe-code" / "build" / "cmake" / "CPackConfig.cmake"
+    config.parent.mkdir(parents=True)
+    config.write_text("", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(Demo)", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/cpack")
+
+    from vibe_code.packaging import CPackAdapter
+
+    with pytest.raises(ValueError, match="Unsupported CPack format"):
+        CPackAdapter().create_plan(
+            tmp_path,
+            PackageRequest("cpack", "Demo", package_type="random-installer"),
+        )
