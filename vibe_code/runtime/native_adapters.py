@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import subprocess
 from typing import Sequence
@@ -148,7 +147,7 @@ class JavaAdapter:
             return False
 
     def command(self, workspace: Path) -> Sequence[str]:
-        output = workspace / ("target" if self.build_system == "maven" else "build" / Path("libs"))
+        output = workspace / ("target" if self.build_system == "maven" else Path("build") / "libs")
         jars = sorted(
             path for path in output.glob("*.jar")
             if not any(token in path.name.lower()
