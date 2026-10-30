@@ -101,3 +101,18 @@ If VIBE_CODE_PREVIEW_COMMAND is not set, the desktop shell can automatically det
 ### Agent preview tools
 
 When a preview adapter is available, the coding agent receives an explicit allow-list of `run_preview`, `get_preview_logs`, and `stop_preview`. The agent is instructed to validate meaningful changes with the preview and inspect diagnostics before finishing. Preview process commands remain owned by the configured adapter rather than being supplied by the model.
+
+
+### Multi-language preview adapters
+
+Automatic preview detection currently supports:
+- Python/PySide6 (runs the detected Python entrypoint)
+- Rust/Cargo (builds with `cargo build`, runs the debug binary)
+- Go (builds to `.vibe-code/bin/preview`, then runs it)
+- .NET single-target `.csproj` projects (builds and launches the output assembly)
+- Electron projects with a locally installed Electron runtime
+- Node projects declaring a `scripts.start` command
+
+Builds use argument arrays with `shell=False`, a bounded timeout, and captured diagnostics. The IDE does not run package installation or arbitrary packaging scripts automatically. Install project dependencies yourself before previewing. Set `VIBE_CODE_PREVIEW_COMMAND` to override automatic detection.
+
+The current .NET adapter intentionally supports one top-level project and one `TargetFramework`; multi-target and solution-level project selection remain future work.
