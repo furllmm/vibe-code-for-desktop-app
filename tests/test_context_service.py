@@ -92,3 +92,27 @@ def test_context_pack_serializes_ranges(tmp_path: Path) -> None:
     assert pack.items
     assert "(L1-2)" in pack.as_text()
     assert "def target" in pack.as_text()
+
+
+def test_context_skips_secret_named_files_and_symlinks(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.py"
+    outside.write_text("def leak_secret(): return 'outside'\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("def main(): return 1\n", encoding="utf-8")
+    (tmp_path / "secrets.yaml").write_text("api_key: do-not-send\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("TOKEN=do-not-send\n", encoding="utf-8")
+    try:
+        (tmp_path / "linked.py").symlink_to(outside)
+    except OSError:
+        outside.unlink()
+        pytest.skip("Symlinks are unavailable on this platform")
+
+    pack = ContextService().build(ContextRequest("project overview", tmp_path, 4000))
+    paths = {item.path.name for item in pack.items}
+    content = pack.as_text()
+    assert "main.py" in paths
+    assert "secrets.yaml" not in paths
+    assert ".env" not in paths
+    assert "linked.py" not in paths
+    assert "do-not-send" not in content
+    assert "leak_secret" not in content
+    outside.unlink()
