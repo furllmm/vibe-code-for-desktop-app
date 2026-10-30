@@ -306,8 +306,18 @@ class MainWindow(QMainWindow):
             session = ProjectEditSession(
                 provider, self.workspace, context_service=self.context_service
             )
-            changes = self._change_manager or ChangeManager(WorkspaceFS(self.workspace.root))
-            self._change_manager = changes
+            if (
+                self._change_manager is None
+                or self._change_manager.filesystem.root.resolve() != self.workspace.root.resolve()
+            ):
+                self._change_manager = ChangeManager(WorkspaceFS(self.workspace.root))
+                if self.change_panel is not None:
+                    old_index = self.right_tabs.indexOf(self.change_panel)
+                    if old_index >= 0:
+                        self.right_tabs.removeTab(old_index)
+                    self.change_panel.deleteLater()
+                    self.change_panel = None
+            changes = self._change_manager
             if self.change_panel is None:
                 self.change_panel = ChangePanel(changes)
                 self.change_panel.rollback_requested.connect(self._rollback_change)
