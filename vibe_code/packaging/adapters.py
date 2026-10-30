@@ -135,10 +135,38 @@ class JavaJPackageAdapter:
         )
 
 
+class AppImageAdapter:
+    """Wrap an already prepared AppDir with appimagetool on Linux."""
+
+    backend = "appimage"
+
+    def create_plan(self, workspace: Path, request: PackageRequest) -> PackagingPlan:
+        if not sys.platform.startswith("linux"):
+            raise RuntimeError("AppImage packaging is available only on Linux")
+        executable = shutil.which("appimagetool")
+        if not executable:
+            raise RuntimeError("appimagetool was not found; install it before packaging")
+        if not request.entrypoint:
+            raise ValueError("AppImage packaging requires an AppDir path")
+        appdir = _workspace_path(workspace, request.entrypoint)
+        if not appdir.is_dir():
+            raise NotADirectoryError(f"AppDir not found: {request.entrypoint}")
+        if not any(appdir.glob("*.desktop")):
+            raise ValueError("AppDir must contain a .desktop file at its root")
+        if not any(appdir.glob("*.png")):
+            raise ValueError("AppDir must contain a PNG application icon at its root")
+        output = _workspace_path(workspace, request.output_dir)
+        artifact = output / f"{_safe_name(request.name)}.AppImage"
+        return PackagingPlan(
+            self.backend, (executable, str(appdir), str(artifact)), output,
+            "Create an AppImage from the supplied AppDir",
+        )
+
+
 class PackagingRegistry:
     def __init__(self, adapters: tuple[PackagingAdapter, ...] | None = None) -> None:
         selected = adapters or (
-            PyInstallerAdapter(), CPackAdapter(), JavaJPackageAdapter()
+            PyInstallerAdapter(), CPackAdapter(), JavaJPackageAdapter(), AppImageAdapter()
         )
         self._adapters = {adapter.backend: adapter for adapter in selected}
 
