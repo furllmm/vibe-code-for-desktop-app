@@ -181,3 +181,10 @@ The proposal service does not write files. Invalid provider output is rejected, 
 The editor now offers three read-only actions for selected code: **Explain Selection**, **Find Bugs**, and **Suggest Improvements**. Each request includes the selected text and up to 20 nearby lines before and after it. Results appear in a separate read-only dialog; this workflow does not write files, run code, or expose workspace tools to the analysis request.
 
 The analysis service accepts only the three supported task types, treats source text as untrusted input, limits the selection to 256 KiB, bounds surrounding context, and rejects empty or oversized model responses. AI findings are suggestions, not proof that a defect exists or that the code is secure.
+
+
+## AI chat about selection (Phase 14)
+
+Select a range in the integrated editor and choose **Ask AI about Selection**. A dedicated conversation opens with a frozen snapshot of the selected code and up to 20 surrounding lines on either side. Ask follow-up questions without reselecting the source; the snapshot remains fixed for that conversation, so the assistant never silently switches context if the editor changes.
+
+The chat uses the configured provider through the provider-neutral interface, exposes no workspace tools, and runs requests outside the Qt GUI thread. It is read-only: it cannot write files or execute code. Source text is treated as untrusted data rather than instructions. Questions, responses, source size, and retained history are bounded; failed requests do not enter conversation history. AI answers are suggestions and should be checked against the actual project.
