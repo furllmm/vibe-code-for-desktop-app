@@ -57,7 +57,7 @@ class RustCargoAdapter(BuildCommandAdapter):
         name = package.get("name") if isinstance(package, dict) else None
         if not isinstance(name, str) or not name.strip():
             raise RuntimeError("Cargo.toml must define [package].name for preview")
-        return name.replace("-", "_")
+        return name
 
     def build(self, workspace: Path) -> None:
         self._build(workspace, ("cargo", "build", "--manifest-path", str(workspace / "Cargo.toml")))
