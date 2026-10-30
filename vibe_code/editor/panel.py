@@ -477,7 +477,7 @@ class EditorPanel(QWidget):
         start = self._qt_position_to_python_index(source, cursor.selectionStart())
         end = self._qt_position_to_python_index(source, cursor.selectionEnd())
         before_lines = source[:start].splitlines()
-        after_lines = source[end:].splitlines()
+        after_lines = source[end:].lstrip("\r\n").splitlines()
         self.selection_analysis_requested.emit({
             "analysis_type": analysis_type,
             "path": path.relative_to(self.workspace.root).as_posix(),
