@@ -100,6 +100,10 @@ class MainWindow(QMainWindow):
         goto_action.setShortcut("Ctrl+G")
         goto_action.triggered.connect(self.go_to_editor_line)
         toolbar.addAction(goto_action)
+        workspace_search_action = QAction("Search Workspace", self)
+        workspace_search_action.setShortcut("Ctrl+Shift+F")
+        workspace_search_action.triggered.connect(self.show_workspace_search)
+        toolbar.addAction(workspace_search_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -206,6 +210,14 @@ class MainWindow(QMainWindow):
         if self.editor_panel is not None:
             self.center_tabs.setCurrentWidget(self.editor_panel)
             self.editor_panel.show_find()
+
+    def show_workspace_search(self) -> None:
+        if self.editor_panel is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        self.center_tabs.setCurrentWidget(self.editor_panel)
+        self.editor_panel.workspace_search_input.setFocus()
+        self.editor_panel.workspace_search_input.selectAll()
 
     def go_to_editor_line(self) -> None:
         if self.editor_panel is None or self.editor_panel.tabs.currentWidget() is None:
