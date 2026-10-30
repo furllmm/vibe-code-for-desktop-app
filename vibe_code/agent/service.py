@@ -105,7 +105,7 @@ class AgentLoop:
 
         for turn in range(1, self.max_turns + 1):
             response: ProviderResponse = self.provider.complete(
-                ProviderRequest(messages, tool_definitions)
+                ProviderRequest(list(messages), tool_definitions)
             )
 
             if not response.tool_calls:
