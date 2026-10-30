@@ -86,7 +86,6 @@ class PackagingDialog(QDialog):
         self.trust = QCheckBox(
             "I trust this workspace and allow its build/packaging hooks to execute."
         )
-        self.trust.setWordWrap(True)
         layout.addWidget(self.trust)
         self.plan_label = QLabel(
             "Review the generated command before starting. Build scripts can execute code."
