@@ -117,6 +117,8 @@ class ChangeManager:
             if not isinstance(content, str):
                 raise TypeError("Project edit content must be text")
             encoded = content.encode("utf-8")
+            if b"\x00" in encoded:
+                raise ValueError(f"Binary replacement content is not allowed: {normalized}")
             total_bytes += len(encoded)
             if len(encoded) > 2 * 1024 * 1024 or total_bytes > 4 * 1024 * 1024:
                 raise ValueError("Project edit exceeds the file or total size limit")
