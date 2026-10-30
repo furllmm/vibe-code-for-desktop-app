@@ -97,3 +97,20 @@ def test_editor_line_numbers_and_go_to_line(tmp_path):
     assert editor.textCursor().blockNumber() == 2
     assert not panel.go_to_line(0)
     assert not panel.go_to_line(99)
+
+
+def test_workspace_search_results_open_matching_line(tmp_path):
+    source = tmp_path / "main.py"
+    source.write_text("first line\nneedle here\nlast line\n", encoding="utf-8")
+    panel = EditorPanel(Workspace(tmp_path))
+    panel.workspace_search_input.setText("needle")
+    panel.search_all_files()
+
+    assert panel.workspace_search_results.topLevelItemCount() == 1
+    file_item = panel.workspace_search_results.topLevelItem(0)
+    assert file_item.childCount() == 1
+    match_item = file_item.child(0)
+    panel.open_search_result(match_item)
+
+    editor = panel.tabs.currentWidget()
+    assert editor.textCursor().blockNumber() == 1
