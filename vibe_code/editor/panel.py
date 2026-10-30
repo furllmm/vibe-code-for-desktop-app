@@ -507,6 +507,16 @@ class EditorPanel(QWidget):
         except (OSError, ValueError, RuntimeError) as exc:
             QMessageBox.warning(self, "Replacement not applied", str(exc))
             return
+        for index in range(self.tabs.count()):
+            editor = self.tabs.widget(index)
+            if not isinstance(editor, CodeEditor):
+                continue
+            editor_path = self._paths.get(index)
+            changed = next((item for item in plan.files if item.path == editor_path), None)
+            if changed is not None:
+                editor.setPlainText(changed.after.decode("utf-8"))
+                editor._disk_hash = hashlib.sha256(changed.after).hexdigest()
+                editor.document().setModified(False)
         self.status_message.emit(f"Replaced {count} occurrence(s) in {len(plan.files)} file(s)")
         self.search_all_files()
 
