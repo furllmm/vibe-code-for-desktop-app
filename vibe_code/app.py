@@ -72,6 +72,7 @@ from vibe_code.runtime import (
     PreviewEngine,
     PythonPySide6Adapter,
     RustCargoAdapter,
+    ProjectValidator,
 )
 
 
@@ -326,12 +327,39 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError, RuntimeError) as exc:
             QMessageBox.warning(self, "Project edit unavailable", str(exc))
             return
-        dialog = ProjectEditDialog(session, changes, instruction, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        try:
+            preview = (
+                self._preview
+                if self._preview is not None
+                and self._preview.workspace == self.workspace.root.resolve()
+                else self._build_preview_engine()
+            )
+            validator = (
+                ProjectValidator(self.workspace.root, preview)
+                if preview is not None else None
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Project validation unavailable", str(exc))
+            validator = None
+            preview = None
+
+        dialog = ProjectEditDialog(
+            session, changes, instruction, self, validator=validator
+        )
+        dialog.exec()
+        if dialog.applied_change_sets:
             self.change_panel.refresh()
             if self.editor_panel is not None:
                 self.editor_panel.refresh_open_files()
-            self.statusBar().showMessage("AI project changes applied and recorded for rollback")
+            self.load_workspace(self.workspace.root)
+            self.refresh_context()
+            self.statusBar().showMessage(
+                f"{len(dialog.applied_change_sets)} approved change set(s) recorded"
+            )
+        if validator is not None:
+            self._preview = validator.preview if validator.preview.running else None
+            if self._preview is not None:
+                self._preview_timer.start()
 
     def open_packaging(self) -> None:
         if self.workspace is None:
