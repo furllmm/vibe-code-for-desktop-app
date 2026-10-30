@@ -1,8 +1,9 @@
-from .adapters import CPackAdapter, JavaJPackageAdapter, PackagingRegistry, PyInstallerAdapter
+from .adapters import AppImageAdapter, CPackAdapter, JavaJPackageAdapter, PackagingRegistry, PyInstallerAdapter
 from .engine import PackagingEngine
 from .models import PackageRequest, PackagingPlan, PackagingResult
 
 __all__ = [
+    "AppImageAdapter",
     "CPackAdapter",
     "JavaJPackageAdapter",
     "PackagingEngine",
