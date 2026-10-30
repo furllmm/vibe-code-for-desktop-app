@@ -123,6 +123,12 @@ The current .NET adapter intentionally supports one top-level project and one `T
 CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMake project produces multiple executable targets, automatic preview stops and asks for a single preview target rather than guessing. Java preview requires the corresponding system build tool (`mvn` or `gradle`) and a runnable JAR with a `Main-Class` manifest; dependency/classpath assembly is not inferred. Java build scripts can execute project-defined code and may download dependencies, so use preview only with workspaces you trust. Local build products and IDE change state under `.vibe-code/` are ignored by Git.
 
 
+## Packaging workflow (Phase 8)
+
+The desktop toolbar now includes **Package Project**. The dialog lets you select a backend and format, set the application name, entrypoint/AppDir and output folder, review the exact command, and watch live build output. Packaging runs on a background Qt worker; cancellation requests terminate the packaging process tree (including child processes where the platform supports it).
+
+Before running, the user must explicitly trust the workspace and approve the displayed command. Build configuration and project hooks can execute code. Commands use argument arrays with `shell=False`; package output is kept inside the selected workspace. The current AppImage backend still expects a prepared AppDir, and backend-specific toolchains must already be installed. Progress is currently indeterminate rather than percentage-based.
+
 ## Packaging engine (Phase 7)
 
 The packaging core currently exposes explicit, inspectable packaging plans through `vibe_code.packaging.PackagingEngine`:
@@ -152,4 +158,4 @@ print(result.success, result.output_dir, result.output)
 
 Plan creation is side-effect free. Execution requires an explicit trusted-workspace approval, runs argument arrays with `shell=False`, captures diagnostics, and has a bounded timeout. Only plans issued by the same engine instance can be executed; output and entrypoint paths are confined to the workspace. Project build hooks and packaging configuration are still executable code, so only package workspaces you trust.
 
-AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow, progress/cancel UI, installer-specific configuration, signing, and release publishing are future work. No package is built automatically when a workspace is opened.
+AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow with live output and cancellation is now available. Percentage-based progress, installer-specific configuration, signing, and release publishing remain future work. No package is built automatically when a workspace is opened.

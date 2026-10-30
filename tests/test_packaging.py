@@ -181,3 +181,62 @@ def test_appimage_adapter_rejects_appdir_without_desktop_file(tmp_path, monkeypa
             tmp_path,
             PackageRequest("appimage", "Demo", entrypoint="Demo.AppDir"),
         )
+
+
+def test_packaging_engine_streams_output_and_creates_output_directory(tmp_path):
+    class FakeAdapter:
+        backend = "fake"
+
+        def create_plan(self, workspace, request):
+            return PackagingPlan(
+                "fake",
+                (sys.executable, "-c", "print('package-ok')"),
+                workspace / "dist",
+                "fake",
+            )
+
+    engine = PackagingEngine(tmp_path, PackagingRegistry((FakeAdapter(),)))
+    plan = engine.create_plan(PackageRequest("fake", "Demo"))
+    streamed = []
+    result = engine.execute(
+        plan, trusted_workspace=True, on_output=streamed.append
+    )
+
+    assert result.success
+    assert "package-ok" in result.output
+    assert "package-ok" in "".join(streamed)
+    assert plan.output_dir.is_dir()
+
+
+def test_packaging_engine_cancellation_stops_running_process(tmp_path):
+    import threading
+    import time
+
+    class FakeAdapter:
+        backend = "fake"
+
+        def create_plan(self, workspace, request):
+            script = "import time; print('started', flush=True); time.sleep(10)"
+            return PackagingPlan(
+                "fake", (sys.executable, "-c", script),
+                workspace / "dist", "fake", timeout_seconds=30,
+            )
+
+    engine = PackagingEngine(tmp_path, PackagingRegistry((FakeAdapter(),)))
+    plan = engine.create_plan(PackageRequest("fake", "Demo"))
+    cancel = threading.Event()
+
+    def receive_output(chunk):
+        if "started" in chunk:
+            cancel.set()
+
+    started = time.monotonic()
+    result = engine.execute(
+        plan, trusted_workspace=True, cancel_event=cancel,
+        on_output=receive_output,
+    )
+
+    assert not result.success
+    assert "cancelled" in result.output.lower()
+    assert "started" in result.output
+    assert time.monotonic() - started < 5

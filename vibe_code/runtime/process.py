@@ -24,6 +24,7 @@ class ProcessManager:
         self._log_file: BinaryIO | None = None
         self._log_offset = 0
         self._stop_requested = False
+        self._last_result: ProcessResult | None = None
 
     @property
     def running(self) -> bool:
@@ -40,6 +41,7 @@ class ProcessManager:
                 self._log_file.close()
             self._log_file = tempfile.TemporaryFile(mode="w+b")
             self._log_offset = 0
+            self._last_result = None
             try:
                 self._stop_requested = False
                 self._process = subprocess.Popen(
@@ -73,21 +75,23 @@ class ProcessManager:
                     process.wait(timeout=timeout)
             result = ProcessResult(returncode=process.returncode, crashed=False)
             self._process = None
+            self._last_result = result
             return result
 
     def poll(self) -> ProcessResult | None:
         with self._lock:
             process = self._process
             if process is None:
-                return None
+                return self._last_result
             returncode = process.poll()
             if returncode is None:
                 return None
             self._process = None
-            return ProcessResult(
+            self._last_result = ProcessResult(
                 returncode=returncode,
                 crashed=returncode != 0 and not self._stop_requested,
             )
+            return self._last_result
 
     def read_available(self) -> str:
         with self._lock:
