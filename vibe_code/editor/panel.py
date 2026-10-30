@@ -6,8 +6,8 @@ import re
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QRegularExpression, Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtCore import QRegularExpression, Signal, Qt
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -69,6 +69,19 @@ class CodeHighlighter(QSyntaxHighlighter):
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
 
+class LineNumberArea(QWidget):
+    def __init__(self, editor: "CodeEditor") -> None:
+        super().__init__(editor)
+        self.editor = editor
+
+    def sizeHint(self):
+        from PySide6.QtCore import QSize
+        return QSize(self.editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event) -> None:
+        self.editor.paint_line_numbers(event)
+
+
 class CodeEditor(QPlainTextEdit):
     find_requested = Signal()
 
@@ -77,6 +90,83 @@ class CodeEditor(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * 4)
         self.setFont(QFont("monospace", 10))
+        self.line_number_area = LineNumberArea(self)
+        self.blockCountChanged.connect(self.update_line_number_area_width)
+        self.updateRequest.connect(self.update_line_number_area)
+        self.cursorPositionChanged.connect(self.highlight_current_line)
+        self.update_line_number_area_width(0)
+        self.highlight_current_line()
+
+    def line_number_area_width(self) -> int:
+        digits = max(2, len(str(max(1, self.blockCount()))))
+        return 10 + self.fontMetrics().horizontalAdvance("9") * digits
+
+    def update_line_number_area_width(self, _count: int) -> None:
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def update_line_number_area(self, rect, dy: int) -> None:
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+        if rect.contains(self.viewport().rect()):
+            self.update_line_number_area_width(0)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        rect = self.contentsRect()
+        self.line_number_area.setGeometry(
+            rect.left(), rect.top(), self.line_number_area_width(), rect.height()
+        )
+
+    def paint_line_numbers(self, event) -> None:
+        painter = QPainter(self.line_number_area)
+        painter.fillRect(event.rect(), self.palette().alternateBase())
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                painter.setPen(self.palette().text().color())
+                painter.drawText(
+                    0, top, self.line_number_area.width() - 5,
+                    self.fontMetrics().height(),  Qt.AlignmentFlag.AlignRight,
+                    str(block_number + 1),
+                )
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_number += 1
+
+    def highlight_current_line(self) -> None:
+        selections = []
+        if not self.isReadOnly():
+            selection = QPlainTextEdit.ExtraSelection()
+            selection.format.setBackground(self.palette().alternateBase())
+            selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            selections.append(selection)
+        self.setExtraSelections(selections)
+
+    def go_to_line(self, line_number: int) -> bool:
+        if line_number < 1 or line_number > self.blockCount():
+            return False
+        cursor = self.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.MoveAnchor, line_number - 1)
+        self.setTextCursor(cursor)
+        self.centerCursor()
+        self.setFocus()
+        return True
+
+    def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.Find):
+            self.find_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def keyPressEvent(self, event) -> None:
         if event.matches(QKeySequence.StandardKey.Find):
@@ -288,3 +378,9 @@ class EditorPanel(QWidget):
                 self.find_status.setText("Not found")
                 return
         self.find_status.setText("Found")
+
+    def go_to_line(self, line_number: int) -> bool:
+        editor = self.tabs.currentWidget()
+        if not isinstance(editor, CodeEditor):
+            return False
+        return editor.go_to_line(line_number)
