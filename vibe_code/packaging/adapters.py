@@ -66,7 +66,11 @@ class PyInstallerAdapter:
 
 class CPackAdapter:
     backend = "cpack"
-    formats = {"zip", "tgz", "deb", "rpm", "nsis", "ifw", "dragndrop", "productbuild"}
+    formats = {
+        "zip": "ZIP", "tgz": "TGZ", "deb": "DEB", "rpm": "RPM",
+        "nsis": "NSIS", "ifw": "IFW", "dragndrop": "DragNDrop",
+        "productbuild": "productbuild",
+    }
 
     def create_plan(self, workspace: Path, request: PackageRequest) -> PackagingPlan:
         if not (workspace / "CMakeLists.txt").is_file():
@@ -77,6 +81,7 @@ class CPackAdapter:
         package_type = request.package_type.lower()
         if package_type not in self.formats:
             raise ValueError(f"Unsupported CPack format: {request.package_type}")
+        generator = self.formats[package_type]
         config = _workspace_path(
             workspace, ".vibe-code/build/cmake/CPackConfig.cmake"
         )
@@ -85,7 +90,7 @@ class CPackAdapter:
         output = _workspace_path(workspace, request.output_dir)
         return PackagingPlan(
             self.backend,
-            (executable, "--config", str(config), "-G", package_type.upper(),
+            (executable, "--config", str(config), "-G", generator,
              "-B", str(output)),
             output,
             f"Create a {package_type.upper()} package with the project's CPack configuration",
