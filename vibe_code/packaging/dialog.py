@@ -94,6 +94,7 @@ class PackagingDialog(QDialog):
         layout.addWidget(self.plan_label)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
+        self.logs.document().setMaximumBlockCount(5000)
         self.logs.setPlaceholderText("Packaging output will appear here…")
         layout.addWidget(self.logs, 1)
         self.progress = QProgressBar()
