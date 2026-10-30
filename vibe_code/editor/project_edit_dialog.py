@@ -24,7 +24,7 @@ class ProjectEditDialog(QDialog):
         self.setWindowTitle("Review AI Project Changes")
         self.resize(980, 680)
         layout = QVBoxLayout(self)
-        self.status = QLabel("AI is preparing a proposal…")
+        self.status = QLabel("AI is preparing a proposal. Full contents of selected project files may be sent to your configured provider.")
         layout.addWidget(self.status)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
