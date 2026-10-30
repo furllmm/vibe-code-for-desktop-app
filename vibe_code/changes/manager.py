@@ -267,6 +267,7 @@ class ChangeManager:
             for item in data["changes"]
         )
 
+        # Validate every target before restoring any file in this change set.
         for record in records:
             path = self.filesystem.resolve(record.path)
             current = path.read_bytes() if path.exists() else None
@@ -275,10 +276,12 @@ class ChangeManager:
                 raise RuntimeError(
                     f"Cannot rollback {record.path}: file changed after the recorded write"
                 )
+            if record.existed_before and not record.backup_path:
+                raise RuntimeError(f"Missing backup for {record.path}")
 
+        for record in records:
+            path = self.filesystem.resolve(record.path)
             if record.existed_before:
-                if not record.backup_path:
-                    raise RuntimeError(f"Missing backup for {record.path}")
                 backup = self._state_resolve(record.backup_path)
                 self._atomic_write(path, backup.read_bytes())
             elif path.exists():
