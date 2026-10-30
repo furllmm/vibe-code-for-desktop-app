@@ -66,7 +66,7 @@ class PyInstallerAdapter:
 
 class CPackAdapter:
     backend = "cpack"
-    formats = {"zip", "tgz", "deb", "rpm", "nsis", "ifw", "dmg", "productbuild"}
+    formats = {"zip", "tgz", "deb", "rpm", "nsis", "ifw", "dragndrop", "productbuild"}
 
     def create_plan(self, workspace: Path, request: PackageRequest) -> PackagingPlan:
         if not (workspace / "CMakeLists.txt").is_file():
@@ -83,7 +83,6 @@ class CPackAdapter:
         if not config.is_file():
             raise RuntimeError("CPackConfig.cmake is missing; configure the CMake project first")
         output = _workspace_path(workspace, request.output_dir)
-        output.mkdir(parents=True, exist_ok=True)
         return PackagingPlan(
             self.backend,
             (executable, "--config", str(config), "-G", package_type.upper(),
@@ -122,7 +121,6 @@ class JavaJPackageAdapter:
         if not any(line.strip().lower().startswith("main-class:") for line in manifest.splitlines()):
             raise ValueError("JAR manifest must declare Main-Class")
         output = _workspace_path(workspace, request.output_dir)
-        output.mkdir(parents=True, exist_ok=True)
         return PackagingPlan(
             self.backend,
             (executable, "--type", "app-image", "--name", _safe_name(request.name),
