@@ -58,7 +58,7 @@ def test_java_jpackage_requires_executable_jar_and_creates_plan(tmp_path, monkey
     with zipfile.ZipFile(jar, "w") as archive:
         archive.writestr(
             "META-INF/MANIFEST.MF",
-            "Manifest-Version: 1.0\\nMain-Class: sample.Main\\n",
+            "Manifest-Version: 1.0\nMain-Class: sample.Main\n",
         )
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/jpackage")
 
