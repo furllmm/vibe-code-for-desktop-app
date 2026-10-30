@@ -129,6 +129,7 @@ The packaging core currently exposes explicit, inspectable packaging plans throu
 
 - **Python / PyInstaller**: one-file or one-folder bundles; requires PyInstaller to be installed in the IDE's Python environment and an explicit workspace-relative entrypoint.
 - **C/C++ / CPack**: ZIP, TGZ, DEB, RPM, NSIS, IFW, DragNDrop, or productbuild when the project generated `.vibe-code/build/cmake/CPackConfig.cmake` and the corresponding CPack generator is installed.
+- **Linux / AppImage**: wraps an existing AppDir containing a root-level `.desktop` file and PNG icon; requires `appimagetool`.
 - **Java / jpackage**: portable `app-image` output from a runnable JAR with a `Main-Class` manifest; requires a full JDK.
 
 Example (Python):
@@ -151,4 +152,4 @@ print(result.success, result.output_dir, result.output)
 
 Plan creation is side-effect free. Execution requires an explicit trusted-workspace approval, runs argument arrays with `shell=False`, captures diagnostics, and has a bounded timeout. Only plans issued by the same engine instance can be executed; output and entrypoint paths are confined to the workspace. Project build hooks and packaging configuration are still executable code, so only package workspaces you trust.
 
-This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow, progress/cancel UI, installer-specific configuration, signing, and release publishing are future work. No package is built automatically when a workspace is opened.
+AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow, progress/cancel UI, installer-specific configuration, signing, and release publishing are future work. No package is built automatically when a workspace is opened.
