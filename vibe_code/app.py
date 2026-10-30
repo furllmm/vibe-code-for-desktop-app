@@ -51,6 +51,7 @@ from vibe_code.changes.panel import ChangePanel
 from vibe_code.packaging.dialog import PackagingDialog
 from vibe_code.editor import EditorPanel
 from vibe_code.editor.selection_edit import propose_selection_edit
+from vibe_code.editor.selection_analysis import analyze_selection
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
         self._last_failure: PreviewFailure | None = None
         self._pending_recovery_failure: PreviewFailure | None = None
         self._pending_selection_edit: dict[str, object] | None = None
+        self._pending_selection_analysis: dict[str, object] | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -188,6 +190,7 @@ class MainWindow(QMainWindow):
         self.editor_panel = EditorPanel(workspace, self)
         self.editor_panel.status_message.connect(self.statusBar().showMessage)
         self.editor_panel.selection_edit_requested.connect(self._request_ai_selection_edit)
+        self.editor_panel.selection_analysis_requested.connect(self._request_ai_selection_analysis)
         placeholder_index = self.center_tabs.indexOf(self.editor_placeholder)
         if placeholder_index >= 0:
             self.center_tabs.removeTab(placeholder_index)
@@ -441,6 +444,98 @@ class MainWindow(QMainWindow):
         self._thread = thread
         self._worker = worker
         thread.start()
+
+
+    def _request_ai_selection_analysis(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict) or self.workspace is None:
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another AI task is already running")
+            return
+        try:
+            provider = self._build_provider()
+            if str(self.workspace.root) != snapshot.get("workspace_root"):
+                raise ValueError("Workspace changed; select the code again")
+            path = str(snapshot["path"])
+            self.workspace.resolve(path)
+            analysis_type = str(snapshot["analysis_type"])
+            self._pending_selection_analysis = snapshot
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            QMessageBox.warning(self, "AI analysis unavailable", str(exc))
+            return
+
+        self.statusBar().showMessage("AI is analyzing the selected code…")
+        self._set_selection_actions_enabled(False)
+        thread = QThread(self)
+        worker = AgentWorker(
+            None,
+            None,
+            work=lambda: analyze_selection(
+                provider,
+                path,
+                str(snapshot["selected"]),
+                analysis_type,
+                context_before=str(snapshot.get("context_before", "")),
+                context_after=str(snapshot.get("context_after", "")),
+            ),
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._selection_analysis_finished)
+        worker.failed.connect(self._agent_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._agent_thread_finished)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _selection_analysis_finished(self, result: object) -> None:
+        snapshot = self._pending_selection_analysis
+        self._pending_selection_analysis = None
+        if not isinstance(snapshot, dict) or self.workspace is None:
+            return
+        if str(self.workspace.root) != snapshot.get("workspace_root"):
+            self.statusBar().showMessage("Workspace changed; AI analysis discarded")
+            return
+        if not isinstance(result, str) or not result.strip():
+            self.statusBar().showMessage("AI returned no analysis")
+            return
+
+        titles = {
+            "explain": "Explain Selection",
+            "bugs": "Code Review — Potential Bugs",
+            "improve": "Suggested Improvements",
+        }
+        analysis_type = str(snapshot.get("analysis_type", "explain"))
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{titles.get(analysis_type, 'AI Analysis')} — {snapshot.get('path', '')}")
+        dialog.resize(760, 560)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText(result)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(output)
+        layout.addWidget(buttons)
+        dialog.exec()
+        self.statusBar().showMessage("AI selection analysis completed; no files were changed")
+
+    def _set_selection_actions_enabled(self, enabled: bool) -> None:
+        if self.editor_panel is None:
+            return
+        for name in (
+            "ai_edit_selection_button",
+            "ai_explain_selection_button",
+            "ai_review_selection_button",
+            "ai_improve_selection_button",
+        ):
+            button = getattr(self.editor_panel, name, None)
+            if button is not None:
+                button.setEnabled(enabled)
 
     def _selection_edit_finished(self, proposed_source: object) -> None:
         snapshot = self._pending_selection_edit
@@ -727,8 +822,9 @@ class MainWindow(QMainWindow):
         self._thread = None
         self._worker = None
         self.run_button.setEnabled(True)
-        if self.editor_panel is not None:
-            self.editor_panel.ai_edit_selection_button.setEnabled(True)
+        self._set_selection_actions_enabled(True)
+        if self._pending_selection_analysis is not None:
+            self._pending_selection_analysis = None
         if self._pending_selection_edit is not None:
             self._pending_selection_edit = None
         failure = self._pending_recovery_failure
