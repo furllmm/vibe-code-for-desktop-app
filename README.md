@@ -121,3 +121,35 @@ The current .NET adapter intentionally supports one top-level project and one `T
 
 
 CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMake project produces multiple executable targets, automatic preview stops and asks for a single preview target rather than guessing. Java preview requires the corresponding system build tool (`mvn` or `gradle`) and a runnable JAR with a `Main-Class` manifest; dependency/classpath assembly is not inferred. Java build scripts can execute project-defined code and may download dependencies, so use preview only with workspaces you trust. Local build products and IDE change state under `.vibe-code/` are ignored by Git.
+
+
+## Packaging engine (Phase 7)
+
+The packaging core currently exposes explicit, inspectable packaging plans through `vibe_code.packaging.PackagingEngine`:
+
+- **Python / PyInstaller**: one-file or one-folder bundles; requires PyInstaller to be installed in the IDE's Python environment and an explicit workspace-relative entrypoint.
+- **C/C++ / CPack**: ZIP, TGZ, DEB, RPM, NSIS, IFW, DragNDrop, or productbuild when the project generated `.vibe-code/build/cmake/CPackConfig.cmake` and the corresponding CPack generator is installed.
+- **Linux / AppImage**: wraps an existing AppDir containing a root-level `.desktop` file and PNG icon; requires `appimagetool`.
+- **Java / jpackage**: portable `app-image` output from a runnable JAR with a `Main-Class` manifest; requires a full JDK.
+
+Example (Python):
+
+```python
+from pathlib import Path
+from vibe_code.packaging import PackageRequest, PackagingEngine
+
+engine = PackagingEngine(Path("/path/to/workspace"))
+plan = engine.create_plan(PackageRequest(
+    backend="pyinstaller",
+    name="MyDesktopApp",
+    entrypoint="main.py",
+    one_file=True,
+))
+print(plan.command)  # Review the exact command before execution.
+result = engine.execute(plan, trusted_workspace=True)
+print(result.success, result.output_dir, result.output)
+```
+
+Plan creation is side-effect free. Execution requires an explicit trusted-workspace approval, runs argument arrays with `shell=False`, captures diagnostics, and has a bounded timeout. Only plans issued by the same engine instance can be executed; output and entrypoint paths are confined to the workspace. Project build hooks and packaging configuration are still executable code, so only package workspaces you trust.
+
+AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow, progress/cancel UI, installer-specific configuration, signing, and release publishing are future work. No package is built automatically when a workspace is opened.
