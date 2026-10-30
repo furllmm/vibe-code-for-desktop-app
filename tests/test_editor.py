@@ -69,3 +69,17 @@ def test_editor_refuses_to_overwrite_external_modification(tmp_path, monkeypatch
     assert not panel.save_current()
     assert source.read_text(encoding="utf-8") == "external edit\n"
     assert editor.document().isModified()
+
+
+def test_editor_does_not_recreate_file_deleted_externally(tmp_path, monkeypatch):
+    source = tmp_path / "removed.py"
+    source.write_text("original\n", encoding="utf-8")
+    panel = EditorPanel(Workspace(tmp_path))
+    editor = panel.open_file(source)
+    editor.appendPlainText("# pending change")
+    source.unlink()
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
+
+    assert not panel.save_current()
+    assert not source.exists()
+    assert editor.document().isModified()
