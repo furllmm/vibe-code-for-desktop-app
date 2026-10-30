@@ -447,6 +447,9 @@ class MainWindow(QMainWindow):
         self._pending_selection_edit = None
         if not isinstance(snapshot, dict) or self.workspace is None:
             return
+        if str(self.workspace.root) != snapshot.get("workspace_root"):
+            self.statusBar().showMessage("Workspace changed while AI was working; proposal discarded")
+            return
         if not isinstance(proposed_source, str):
             self.statusBar().showMessage("AI returned an invalid edit")
             return
@@ -726,6 +729,8 @@ class MainWindow(QMainWindow):
         self.run_button.setEnabled(True)
         if self.editor_panel is not None:
             self.editor_panel.ai_edit_selection_button.setEnabled(True)
+        if self._pending_selection_edit is not None:
+            self._pending_selection_edit = None
         failure = self._pending_recovery_failure
         self._pending_recovery_failure = None
         if failure is not None:
