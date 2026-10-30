@@ -215,7 +215,7 @@ class ChangeManager:
                 before = self._state_resolve(record.backup_path).read_text(
                     encoding="utf-8", errors="replace"
                 )
-            path = self.filesystem.resolve(record.path)
+            path = self._resolve_change_target(record.path)
             after = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
             chunks.extend(
                 difflib.unified_diff(
@@ -244,6 +244,8 @@ class ChangeManager:
                 raise RuntimeError(
                     f"Cannot rollback {record.path}: file changed after the recorded write"
                 )
+            if record.existed_before and not record.backup_path:
+                raise RuntimeError(f"Missing backup for {record.path}")
 
         for record in records:
             path = self.filesystem.resolve(record.path)
@@ -330,6 +332,18 @@ class ChangeManager:
         if not isinstance(data, dict):
             raise RuntimeError("Invalid change manifest")
         return data
+
+    def _resolve_change_target(self, relative_path: str) -> Path:
+        relative = Path(relative_path)
+        if relative.is_absolute() or ".." in relative.parts or "\\" in relative_path or ":" in relative_path:
+            raise PermissionError("Invalid recorded workspace path")
+        lexical = self.filesystem.root / relative
+        cursor = lexical
+        while cursor != self.filesystem.root:
+            if cursor.is_symlink():
+                raise PermissionError("Cannot operate on a symlinked change target")
+            cursor = cursor.parent
+        return self.filesystem.resolve(relative_path)
 
     def _state_resolve(self, relative_path: str) -> Path:
         candidate = (self.filesystem.root / relative_path).resolve()
