@@ -27,6 +27,7 @@ class ProjectIndexer:
     def build(self, root: Path) -> tuple[FileIndex, ...]:
         root = root.expanduser().resolve()
         results: list[FileIndex] = []
+        scanned_bytes = 0
         for path in root.rglob("*"):
             if path.is_symlink() or not path.is_file():
                 continue
@@ -39,8 +40,12 @@ class ProjectIndexer:
                     continue
                 if len(results) >= 20_000:
                     break
-                if path.stat().st_size > 512_000:
+                size = path.stat().st_size
+                if size > 512_000:
                     continue
+                if scanned_bytes + size > 256 * 1024 * 1024:
+                    break
+                scanned_bytes += size
             except (OSError, ValueError):
                 continue
             language = self._language(path)
