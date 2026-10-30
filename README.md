@@ -123,6 +123,14 @@ The current .NET adapter intentionally supports one top-level project and one `T
 CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMake project produces multiple executable targets, automatic preview stops and asks for a single preview target rather than guessing. Java preview requires the corresponding system build tool (`mvn` or `gradle`) and a runnable JAR with a `Main-Class` manifest; dependency/classpath assembly is not inferred. Java build scripts can execute project-defined code and may download dependencies, so use preview only with workspaces you trust. Local build products and IDE change state under `.vibe-code/` are ignored by Git.
 
 
+## Code editor (Phase 9)
+
+The workspace now includes an integrated tabbed text editor. Double-click a file in the project tree to open it; opening an already-open file focuses its existing tab. The editor includes lightweight syntax highlighting for Python, JavaScript/TypeScript, C/C++, Java, JSON, Markdown, and common configuration formats, plus Find in File (Ctrl+F) and Save (Ctrl+S).
+
+File handling is deliberately conservative: only UTF-8 text files up to 2 MiB are editable, binary files and paths outside the workspace are rejected, and saves use a temporary file plus atomic replacement. The editor hashes the original file and refuses to overwrite an external modification; reopen the file to reconcile external changes. Closing a modified tab or switching workspaces asks whether to save, discard, or cancel.
+
+This is an initial editor foundation, not a full IDE editor yet. Language-server integration, diagnostics, autocomplete, line-number gutter, multi-file search/replace, and advanced diff editing remain future work.
+
 ## Packaging workflow (Phase 8)
 
 The desktop toolbar now includes **Package Project**. The dialog lets you select a backend and format, set the application name, entrypoint/AppDir and output folder, review the exact command, and watch live build output. Packaging runs on a background Qt worker; cancellation requests terminate the packaging process tree (including child processes where the platform supports it).
