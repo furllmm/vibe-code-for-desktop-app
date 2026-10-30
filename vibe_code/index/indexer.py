@@ -28,10 +28,18 @@ class ProjectIndexer:
         root = root.expanduser().resolve()
         results: list[FileIndex] = []
         for path in root.rglob("*"):
-            if not path.is_file() or any(
-                part in {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
-                for part in path.parts
-            ):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                relative = path.relative_to(root)
+                if any(
+                    part in {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
+                    for part in relative.parts
+                ):
+                    continue
+                if path.stat().st_size > 512_000 or len(results) >= 20_000:
+                    continue
+            except (OSError, ValueError):
                 continue
             language = self._language(path)
             if language is None:
