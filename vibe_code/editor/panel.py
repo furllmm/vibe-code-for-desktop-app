@@ -492,8 +492,9 @@ class EditorPanel(QWidget):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Apply).setText("Apply Replacements")
-        buttons.accepted.connect(dialog.accept)
+        apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        apply_button.setText("Apply Replacements")
+        apply_button.clicked.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         dialog_layout = QVBoxLayout(dialog)
         dialog_layout.addWidget(preview)
