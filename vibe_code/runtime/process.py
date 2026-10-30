@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -97,10 +98,16 @@ class ProcessManager:
         with self._lock:
             if self._log_file is None:
                 return ""
-            self._log_file.flush()
-            self._log_file.seek(self._log_offset)
-            data = self._log_file.read()
-            self._log_offset = self._log_file.tell()
+            descriptor = self._log_file.fileno()
+            size = os.fstat(descriptor).st_size
+            if size <= self._log_offset:
+                return ""
+            # The child writes through an inherited descriptor, bypassing the
+            # parent's buffered file object's position cache. Use raw descriptor
+            # I/O so a stale Python buffer cannot hide the child's final output.
+            os.lseek(descriptor, self._log_offset, os.SEEK_SET)
+            data = os.read(descriptor, size - self._log_offset)
+            self._log_offset += len(data)
         return data.decode("utf-8", errors="replace")
 
     def communicate(self, timeout: float | None = None) -> str:
