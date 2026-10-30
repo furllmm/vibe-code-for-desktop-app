@@ -37,6 +37,8 @@ from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
+from vibe_code.chat import ProjectChatSession
+from vibe_code.chat.dialog import ProjectChatDialog
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_context)
         toolbar.addAction(open_action)
         toolbar.addAction(refresh_action)
+        project_chat_action = QAction("Chat with Project", self)
+        project_chat_action.triggered.connect(self.open_project_chat)
+        toolbar.addAction(project_chat_action)
         package_action = QAction("Package Project", self)
         package_action.triggered.connect(self.open_packaging)
         toolbar.addAction(package_action)
@@ -246,6 +251,33 @@ class MainWindow(QMainWindow):
         )
         if accepted:
             self.editor_panel.go_to_line(line)
+
+
+    def open_project_chat(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        focus_paths: tuple[str, ...] = ()
+        if self.editor_panel is not None:
+            from vibe_code.editor.panel import CodeEditor
+            editor = self.editor_panel.tabs.currentWidget()
+            if isinstance(editor, CodeEditor):
+                path = getattr(editor, "_workspace_path", None)
+                if path is not None and self.workspace.contains(path):
+                    focus_paths = (path.relative_to(self.workspace.root).as_posix(),)
+        try:
+            provider = self._build_provider()
+            session = ProjectChatSession(
+                provider,
+                self.workspace,
+                context_service=self.context_service,
+                focus_paths=focus_paths,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Project chat unavailable", str(exc))
+            return
+        dialog = ProjectChatDialog(session, self.workspace.root.name, self)
+        dialog.exec()
 
     def open_packaging(self) -> None:
         if self.workspace is None:

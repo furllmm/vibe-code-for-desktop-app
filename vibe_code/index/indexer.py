@@ -27,11 +27,26 @@ class ProjectIndexer:
     def build(self, root: Path) -> tuple[FileIndex, ...]:
         root = root.expanduser().resolve()
         results: list[FileIndex] = []
+        scanned_bytes = 0
         for path in root.rglob("*"):
-            if not path.is_file() or any(
-                part in {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
-                for part in path.parts
-            ):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                relative = path.relative_to(root)
+                if any(
+                    part in {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
+                    for part in relative.parts
+                ):
+                    continue
+                if len(results) >= 20_000:
+                    break
+                size = path.stat().st_size
+                if size > 512_000:
+                    continue
+                if scanned_bytes + size > 256 * 1024 * 1024:
+                    break
+                scanned_bytes += size
+            except (OSError, ValueError):
                 continue
             language = self._language(path)
             if language is None:
