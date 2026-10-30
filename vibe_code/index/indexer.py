@@ -37,7 +37,9 @@ class ProjectIndexer:
                     for part in relative.parts
                 ):
                     continue
-                if path.stat().st_size > 512_000 or len(results) >= 20_000:
+                if len(results) >= 20_000:
+                    break
+                if path.stat().st_size > 512_000:
                     continue
             except (OSError, ValueError):
                 continue
