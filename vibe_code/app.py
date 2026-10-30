@@ -194,6 +194,11 @@ class MainWindow(QMainWindow):
             )
         result = self._preview.poll()
         if result is not None:
+            final_logs = self._preview.read_logs()
+            if final_logs:
+                self.output.append(
+                    "<b>Preview:</b> " + html.escape(final_logs).replace("\\n", "<br>")
+                )
             self._preview_timer.stop()
             self.output.append(
                 f"<b>Preview exited:</b> {result.returncode}"
