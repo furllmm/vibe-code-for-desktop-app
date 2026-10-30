@@ -73,7 +73,17 @@ class ContextService:
                 continue
             if any(part in _IGNORE_DIRS for part in relative.parts):
                 continue
-            if path.name.lower() in _SENSITIVE_NAMES or path.suffix.lower() in _SENSITIVE_SUFFIXES:
+            lower_name = path.name.lower()
+            if (
+                lower_name in _SENSITIVE_NAMES
+                or lower_name.startswith(".env")
+                or path.suffix.lower() in _SENSITIVE_SUFFIXES
+                or any(
+                    marker in lower_name
+                    for marker in ("secret", "credential", "password", "private_key", "api_key", "access_token")
+                )
+                or any(part.lower() in {"secrets", "credentials", "private_keys"} for part in relative.parts[:-1])
+            ):
                 continue
             if path.suffix.lower() not in _TEXT_EXTENSIONS:
                 continue
