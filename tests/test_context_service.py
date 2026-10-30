@@ -100,6 +100,7 @@ def test_context_skips_secret_named_files_and_symlinks(tmp_path: Path) -> None:
     (tmp_path / "main.py").write_text("def main(): return 1\n", encoding="utf-8")
     (tmp_path / "secrets.yaml").write_text("api_key: do-not-send\n", encoding="utf-8")
     (tmp_path / ".env").write_text("TOKEN=do-not-send\n", encoding="utf-8")
+    (tmp_path / "private_key.py").write_text("PRIVATE_KEY = 'do-not-send'\n", encoding="utf-8")
     try:
         (tmp_path / "linked.py").symlink_to(outside)
     except OSError:
@@ -112,6 +113,7 @@ def test_context_skips_secret_named_files_and_symlinks(tmp_path: Path) -> None:
     assert "main.py" in paths
     assert "secrets.yaml" not in paths
     assert ".env" not in paths
+    assert "private_key.py" not in paths
     assert "linked.py" not in paths
     assert "do-not-send" not in content
     assert "leak_secret" not in content
