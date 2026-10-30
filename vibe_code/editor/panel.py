@@ -192,7 +192,9 @@ class EditorPanel(QWidget):
             return False
         try:
             path = self.workspace.resolve(path)
-            if path.exists() and not path.is_file():
+            if not path.exists():
+                raise ValueError("File was removed outside the editor. Reopen the workspace before saving.")
+            if not path.is_file():
                 raise ValueError("Save target is not a regular file")
             payload = editor.toPlainText().encode("utf-8")
             if path.exists():
