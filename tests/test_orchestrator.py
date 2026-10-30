@@ -82,8 +82,8 @@ def test_orchestrator_stops_after_repair_limit(tmp_path: Path):
     changes = ChangeManager(WorkspaceFS(tmp_path))
     agent = FakeAgent()
     preview = FakePreview(
-        [ProcessResult(1, True), ProcessResult(2, True)],
-        ["bad1", "bad2"],
+        [ProcessResult(1, True), ProcessResult(2, True), ProcessResult(3, True)],
+        ["bad1", "bad2", "bad3"],
     )
     orchestrator = AgentOrchestrator(
         agent, FakeContext(), changes, preview, tmp_path, max_repair_cycles=2, startup_timeout=0.1

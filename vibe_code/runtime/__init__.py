@@ -6,12 +6,15 @@ from .adapters import (
     NodeScriptAdapter,
     RustCargoAdapter,
 )
+from .native_adapters import CMakeAdapter, JavaAdapter
 from .preview import GenericPreviewAdapter, PreviewConfig, PreviewEngine
 from .python_adapter import PythonPySide6Adapter
 from .process import ProcessManager, ProcessResult
 
 __all__ = [
     "AdapterRegistry",
+    "CMakeAdapter",
+    "JavaAdapter",
     "DotNetAdapter",
     "ElectronAdapter",
     "GoAdapter",

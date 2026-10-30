@@ -15,3 +15,6 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+
+# Local IDE state, preview build outputs, and change snapshots
+.vibe-code/

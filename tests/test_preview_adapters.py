@@ -87,3 +87,22 @@ def test_electron_requires_local_runtime(tmp_path: Path):
     adapter = ElectronAdapter()
 
     assert not adapter.detect(tmp_path)
+
+
+
+def test_node_adapter_rejects_non_object_package_json(tmp_path: Path):
+    (tmp_path / "package.json").write_text("[]", encoding="utf-8")
+    assert not NodeScriptAdapter().detect(tmp_path)
+
+
+def test_node_adapter_rejects_empty_start_script(tmp_path: Path):
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"start": "  "}}), encoding="utf-8"
+    )
+    assert not NodeScriptAdapter().detect(tmp_path)
+
+
+def test_dotnet_adapter_refuses_ambiguous_projects(tmp_path: Path):
+    (tmp_path / "A.csproj").write_text("<Project/>", encoding="utf-8")
+    (tmp_path / "B.csproj").write_text("<Project/>", encoding="utf-8")
+    assert not DotNetAdapter().detect(tmp_path)

@@ -53,6 +53,8 @@ class RustCargoAdapter(BuildCommandAdapter):
             data = tomllib.loads((workspace / "Cargo.toml").read_text(encoding="utf-8"))
         except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
             raise RuntimeError(f"Could not read Cargo.toml: {exc}") from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("Cargo.toml must contain a package table")
         package = data.get("package", {})
         name = package.get("name") if isinstance(package, dict) else None
         if not isinstance(name, str) or not name.strip():
@@ -98,7 +100,10 @@ class DotNetAdapter(BuildCommandAdapter):
 
     def detect(self, workspace: Path) -> bool:
         projects = sorted(workspace.glob("*.csproj"))
-        if not projects:
+        self.project = None
+        self.assembly_name = None
+        self.target_framework = None
+        if len(projects) != 1:
             return False
         self.project = projects[0]
         try:
@@ -156,8 +161,12 @@ class ElectronAdapter:
             data = json.loads(package.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             return False
+        if not isinstance(data, dict):
+            return False
         dependencies = data.get("dependencies", {})
         dev_dependencies = data.get("devDependencies", {})
+        if not isinstance(dependencies, dict) or not isinstance(dev_dependencies, dict):
+            return False
         return "electron" in dependencies or "electron" in dev_dependencies
 
     def build(self, workspace: Path) -> None:
@@ -180,8 +189,14 @@ class NodeScriptAdapter:
             data = json.loads(package.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             return False
+        if not isinstance(data, dict):
+            return False
         scripts = data.get("scripts", {})
-        return isinstance(scripts, dict) and isinstance(scripts.get("start"), str)
+        return (
+            isinstance(scripts, dict)
+            and isinstance(scripts.get("start"), str)
+            and bool(scripts["start"].strip())
+        )
 
     def build(self, workspace: Path) -> None:
         # Package managers and lifecycle scripts are user-controlled; no implicit install/build.
@@ -189,8 +204,11 @@ class NodeScriptAdapter:
 
     def command(self, workspace: Path) -> Sequence[str]:
         package = workspace / "package.json"
-        data = json.loads(package.read_text(encoding="utf-8"))
-        script = data["scripts"]["start"]
+        try:
+            data = json.loads(package.read_text(encoding="utf-8"))
+            script = data["scripts"]["start"]
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise RuntimeError("Could not read a valid package.json scripts.start entry") from exc
         if not isinstance(script, str) or not script.strip():
             raise RuntimeError("package.json scripts.start must be a non-empty string")
         # npm executes the declared script; this is an explicit project-run action.

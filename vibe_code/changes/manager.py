@@ -39,7 +39,9 @@ class ChangeManager:
         self.state_root.mkdir(parents=True, exist_ok=True)
 
     def write_text(self, relative_path: str, content: str) -> ChangeRecord:
-        normalized = Path(relative_path).as_posix().lstrip("./")
+        normalized = Path(relative_path).as_posix()
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
         if normalized == ".vibe-code/changes" or normalized.startswith(".vibe-code/changes/"):
             raise PermissionError("Change state is managed internally")
         path = self.filesystem.resolve(relative_path)

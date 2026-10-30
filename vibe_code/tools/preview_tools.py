@@ -45,6 +45,8 @@ class GetPreviewLogsTool:
         try:
             logs = self.preview.read_logs()
             status = self.preview.poll()
+            # poll() waits for the output reader on process exit; collect its final chunk.
+            logs += self.preview.read_logs()
             parts = []
             if logs:
                 parts.append(logs.rstrip())
