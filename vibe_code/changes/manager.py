@@ -232,67 +232,62 @@ class ChangeManager:
         ids = tuple(dict.fromkeys(change_ids))
         if not ids:
             return ()
-
         change_sets = tuple(self.get_change(change_id) for change_id in ids)
         records = [record for change_set in change_sets for record in change_set.changes]
-
-        for record in records:
-            path = self.filesystem.resolve(record.path)
-            current = path.read_bytes() if path.exists() else None
-            current_hash = self._sha256(current) if current is not None else None
-            if current_hash != record.after_sha256:
-                raise RuntimeError(
-                    f"Cannot rollback {record.path}: file changed after the recorded write"
-                )
-            if record.existed_before and not record.backup_path:
-                raise RuntimeError(f"Missing backup for {record.path}")
-
-        for record in records:
-            path = self.filesystem.resolve(record.path)
-            if record.existed_before:
-                if not record.backup_path:
-                    raise RuntimeError(f"Missing backup for {record.path}")
-                backup = self._state_resolve(record.backup_path)
-                self._atomic_write(path, backup.read_bytes())
-            elif path.exists():
-                path.unlink()
-
+        prepared = self._preflight_rollback(records)
+        self._restore_preflighted(prepared)
         return change_sets
 
     def rollback(self, change_id: str) -> ChangeSet:
-        data = self._load(change_id)
-        records = tuple(
-            ChangeRecord(
-                path=item["path"],
-                existed_before=bool(item["existed_before"]),
-                before_sha256=item.get("before_sha256"),
-                after_sha256=item["after_sha256"],
-                backup_path=item.get("backup_path"),
-            )
-            for item in data["changes"]
-        )
+        change_set = self.get_change(change_id)
+        prepared = self._preflight_rollback(list(change_set.changes))
+        self._restore_preflighted(prepared)
+        return change_set
 
-        # Validate every target before restoring any file in this change set.
+    def _preflight_rollback(self, records: list[ChangeRecord]):
+        prepared = []
         for record in records:
-            path = self.filesystem.resolve(record.path)
+            path = self._resolve_change_target(record.path)
             current = path.read_bytes() if path.exists() else None
             current_hash = self._sha256(current) if current is not None else None
             if current_hash != record.after_sha256:
                 raise RuntimeError(
                     f"Cannot rollback {record.path}: file changed after the recorded write"
                 )
-            if record.existed_before and not record.backup_path:
-                raise RuntimeError(f"Missing backup for {record.path}")
-
-        for record in records:
-            path = self.filesystem.resolve(record.path)
+            backup = None
             if record.existed_before:
-                backup = self._state_resolve(record.backup_path)
-                self._atomic_write(path, backup.read_bytes())
-            elif path.exists():
-                path.unlink()
+                if not record.backup_path:
+                    raise RuntimeError(f"Missing backup for {record.path}")
+                backup_path = self._state_resolve(record.backup_path)
+                if not backup_path.is_file():
+                    raise RuntimeError(f"Missing backup for {record.path}")
+                backup = backup_path.read_bytes()
+                if self._sha256(backup) != record.before_sha256:
+                    raise RuntimeError(f"Backup verification failed for {record.path}")
+            prepared.append((record, path, current, backup))
+        return prepared
 
-        return ChangeSet(change_id, records)
+    def _restore_preflighted(self, prepared) -> None:
+        restored = []
+        try:
+            for record, path, current, backup in prepared:
+                if record.existed_before:
+                    self._atomic_write(path, backup)
+                elif path.exists():
+                    path.unlink()
+                restored.append((path, current))
+        except Exception:
+            # Best-effort recovery to the state immediately before rollback.
+            for path, current in reversed(restored):
+                try:
+                    if current is None:
+                        if path.exists():
+                            path.unlink()
+                    else:
+                        self._atomic_write(path, current)
+                except OSError:
+                    pass
+            raise
 
     def _save(self, change_set: ChangeSet) -> None:
         payload = {
