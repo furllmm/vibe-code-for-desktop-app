@@ -120,7 +120,7 @@ def test_agent_loop_executes_tool_and_returns_final_response() -> None:
     assert result.executions[0].result.output == "tool result"
     assert provider.requests[1].messages[-1].role == "tool"
     assert provider.requests[1].messages[-1].tool_call_id == "1"
-    assert provider.requests[1].messages[1].tool_calls[0].name == "echo"
+    assert provider.requests[1].messages[2].tool_calls[0].name == "echo"
     assert provider.requests[1].messages[1].tool_calls[0].arguments == {"text": "tool result"}
 
 
