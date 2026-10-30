@@ -138,13 +138,13 @@ class PackagingEngine:
 
                 if cancelled:
                     return PackagingResult(
-                        False, "Packaging cancelled.\\n" + captured,
+                        False, "Packaging cancelled." + chr(10) + captured,
                         output_dir, process.returncode,
                     )
                 if timed_out:
                     return PackagingResult(
                         False,
-                        f"Packaging timed out after {plan.timeout_seconds}s.\\n{captured}",
+                        f"Packaging timed out after {plan.timeout_seconds}s." + chr(10) + captured,
                         output_dir,
                         process.returncode,
                     )
