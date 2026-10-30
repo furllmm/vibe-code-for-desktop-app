@@ -43,10 +43,10 @@ class GetPreviewLogsTool:
         if arguments:
             return ToolResult(False, "get_preview_logs takes no arguments")
         try:
-            logs = self.preview.read_logs()
+            # Poll first: once the child has exited, its redirected output is complete.
+            # If it is still running, the next tool call will collect any final bytes.
             status = self.preview.poll()
-            # poll() waits for the output reader on process exit; collect its final chunk.
-            logs += self.preview.read_logs()
+            logs = self.preview.read_logs()
             parts = []
             if logs:
                 parts.append(logs.rstrip())
