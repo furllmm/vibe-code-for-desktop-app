@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import hashlib
 import os
-import re
 import tempfile
 from pathlib import Path
 
@@ -143,6 +143,8 @@ class EditorPanel(QWidget):
             raise ValueError("File is not valid UTF-8 text") from exc
 
         editor = CodeEditor()
+        editor._workspace_path = resolved
+        editor._disk_hash = hashlib.sha256(raw).hexdigest()
         editor.setPlainText(content)
         CodeHighlighter(editor.document(), resolved.suffix.lower())
         editor.document().modificationChanged.connect(
@@ -165,11 +167,6 @@ class EditorPanel(QWidget):
             if not isinstance(widget, CodeEditor):
                 continue
             path = getattr(widget, "_workspace_path", None)
-            if path is None:
-                path = next(
-                    (p for old, p in self._paths.items() if self._editors.get(old) is widget),
-                    None,
-                )
             if path is not None:
                 paths[index] = path
                 editors[index] = widget
@@ -198,7 +195,13 @@ class EditorPanel(QWidget):
             if path.exists() and not path.is_file():
                 raise ValueError("Save target is not a regular file")
             payload = editor.toPlainText().encode("utf-8")
-            mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+            if path.exists():
+                current_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                if current_hash != getattr(editor, "_disk_hash", current_hash):
+                    raise ValueError("File changed outside the editor. Reopen it before saving to avoid overwriting external changes.")
+                mode = path.stat().st_mode & 0o777
+            else:
+                mode = 0o644
             fd, temp_name = tempfile.mkstemp(prefix=".vibe-code-save-", dir=path.parent)
             try:
                 with os.fdopen(fd, "wb") as stream:
@@ -217,6 +220,7 @@ class EditorPanel(QWidget):
             QMessageBox.warning(self, "Save failed", str(exc))
             self.status_message.emit(f"Save failed: {exc}")
             return False
+        editor._disk_hash = hashlib.sha256(payload).hexdigest()
         editor.document().setModified(False)
         self.status_message.emit(f"Saved {path.relative_to(self.workspace.root)}")
         return True
