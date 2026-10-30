@@ -327,13 +327,10 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError, RuntimeError) as exc:
             QMessageBox.warning(self, "Project edit unavailable", str(exc))
             return
+        if self._preview is not None:
+            self.stop_preview()
         try:
-            preview = (
-                self._preview
-                if self._preview is not None
-                and self._preview.workspace == self.workspace.root.resolve()
-                else self._build_preview_engine()
-            )
+            preview = self._build_preview_engine()
             validator = (
                 ProjectValidator(self.workspace.root, preview)
                 if preview is not None else None
