@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import difflib
+import hashlib
 import html
 import os
 import shlex
@@ -10,6 +12,8 @@ from PySide6.QtCore import QThread, QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QMainWindow,
     QLabel,
@@ -23,6 +27,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QTreeWidget,
     QTreeWidgetItem,
+    QVBoxLayout,
 )
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
@@ -45,6 +50,7 @@ from vibe_code.changes import ChangeManager
 from vibe_code.changes.panel import ChangePanel
 from vibe_code.packaging.dialog import PackagingDialog
 from vibe_code.editor import EditorPanel
+from vibe_code.editor.selection_edit import propose_selection_edit
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
@@ -76,6 +82,7 @@ class MainWindow(QMainWindow):
         self._orchestrator: AgentOrchestrator | None = None
         self._last_failure: PreviewFailure | None = None
         self._pending_recovery_failure: PreviewFailure | None = None
+        self._pending_selection_edit: dict[str, object] | None = None
 
         toolbar = QToolBar("Workspace")
         self.addToolBar(toolbar)
@@ -180,6 +187,7 @@ class MainWindow(QMainWindow):
             self.editor_panel.deleteLater()
         self.editor_panel = EditorPanel(workspace, self)
         self.editor_panel.status_message.connect(self.statusBar().showMessage)
+        self.editor_panel.selection_edit_requested.connect(self._request_ai_selection_edit)
         placeholder_index = self.center_tabs.indexOf(self.editor_placeholder)
         if placeholder_index >= 0:
             self.center_tabs.removeTab(placeholder_index)
@@ -383,6 +391,131 @@ class MainWindow(QMainWindow):
         self._thread = thread
         self._worker = worker
         thread.start()
+
+
+    def _request_ai_selection_edit(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict) or self.workspace is None:
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another AI task is already running")
+            return
+        instruction, accepted = QInputDialog.getMultiLineText(
+            self, "AI Edit Selection", "What should the AI change in the selected code?", ""
+        )
+        if not accepted:
+            return
+        if not instruction.strip():
+            self.statusBar().showMessage("Enter an edit instruction")
+            return
+        try:
+            provider = self._build_provider()
+            path = str(snapshot["path"])
+            source = str(snapshot["source"])
+            start = int(snapshot["start"])
+            end = int(snapshot["end"])
+            self.workspace.resolve(path)
+            self._pending_selection_edit = snapshot
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            QMessageBox.warning(self, "AI edit unavailable", str(exc))
+            return
+
+        self.statusBar().showMessage("AI is preparing a selection edit…")
+        if self.editor_panel is not None:
+            self.editor_panel.ai_edit_selection_button.setEnabled(False)
+        thread = QThread(self)
+        worker = AgentWorker(
+            None,
+            None,
+            work=lambda: propose_selection_edit(
+                provider, path, source, start, end, instruction
+            ),
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._selection_edit_finished)
+        worker.failed.connect(self._agent_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._agent_thread_finished)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _selection_edit_finished(self, proposed_source: object) -> None:
+        snapshot = self._pending_selection_edit
+        self._pending_selection_edit = None
+        if not isinstance(snapshot, dict) or self.workspace is None:
+            return
+        if str(self.workspace.root) != snapshot.get("workspace_root"):
+            self.statusBar().showMessage("Workspace changed while AI was working; proposal discarded")
+            return
+        if not isinstance(proposed_source, str):
+            self.statusBar().showMessage("AI returned an invalid edit")
+            return
+        editor = snapshot.get("editor")
+        if editor is None or editor.toPlainText() != snapshot.get("source"):
+            self.statusBar().showMessage("Editor content changed while AI was working; preview discarded")
+            return
+        try:
+            path = self.workspace.resolve(str(snapshot["path"]))
+            if not path.is_file():
+                raise RuntimeError("The selected file was removed")
+            disk_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            if disk_hash != snapshot.get("disk_hash"):
+                raise RuntimeError("The file changed on disk while AI was working; preview discarded")
+            before = str(snapshot["source"])
+            diff = "".join(difflib.unified_diff(
+                before.splitlines(keepends=True),
+                proposed_source.splitlines(keepends=True),
+                fromfile=f"a/{snapshot['path']}",
+                tofile=f"b/{snapshot['path']}",
+            ))
+            if not diff:
+                self.statusBar().showMessage("AI proposed no changes")
+                return
+            preview = QPlainTextEdit()
+            preview.setReadOnly(True)
+            preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            preview.setPlainText(diff[:100_000] + ("\n… diff preview truncated …" if len(diff) > 100_000 else ""))
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Review AI Selection Edit")
+            dialog.resize(900, 600)
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel
+            )
+            apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+            apply_button.setText("Apply Edit")
+            apply_button.clicked.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(preview)
+            layout.addWidget(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                self.statusBar().showMessage("AI edit cancelled; file unchanged")
+                return
+
+            manager = self._change_manager
+            if manager is None:
+                manager = ChangeManager(WorkspaceFS(self.workspace.root))
+                self._change_manager = manager
+            manager.write_text(
+                str(snapshot["path"]),
+                proposed_source,
+                expected_sha256=str(snapshot["disk_hash"]),
+            )
+            editor.setPlainText(proposed_source)
+            editor._disk_hash = hashlib.sha256(proposed_source.encode("utf-8")).hexdigest()
+            editor.document().setModified(False)
+            if self.change_panel is None:
+                self.change_panel = ChangePanel(manager)
+                self.change_panel.rollback_requested.connect(self._rollback_change)
+                self.right_tabs.addTab(self.change_panel, "Changes")
+            self.change_panel.refresh()
+            self.statusBar().showMessage(f"AI edit applied and recorded: {snapshot['path']}")
+        except (OSError, ValueError, KeyError, PermissionError, RuntimeError) as exc:
+            QMessageBox.warning(self, "AI edit not applied", str(exc))
+            self.statusBar().showMessage(f"AI edit not applied: {exc}")
 
     def _build_preview_engine(self) -> PreviewEngine | None:
         if self.workspace is None:
@@ -594,6 +727,10 @@ class MainWindow(QMainWindow):
         self._thread = None
         self._worker = None
         self.run_button.setEnabled(True)
+        if self.editor_panel is not None:
+            self.editor_panel.ai_edit_selection_button.setEnabled(True)
+        if self._pending_selection_edit is not None:
+            self._pending_selection_edit = None
         failure = self._pending_recovery_failure
         self._pending_recovery_failure = None
         if failure is not None:

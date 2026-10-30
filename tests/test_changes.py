@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 
 import pytest
 
@@ -71,3 +72,16 @@ def test_diff_is_available_for_review(tmp_path: Path) -> None:
 
     assert "-old" in diff
     assert "+new" in diff
+
+
+def test_write_text_expected_hash_rejects_stale_review_without_overwriting(tmp_path: Path) -> None:
+    target = tmp_path / "app.py"
+    target.write_text("original\n", encoding="utf-8")
+    manager = ChangeManager(WorkspaceFS(tmp_path))
+    expected = hashlib.sha256(target.read_bytes()).hexdigest()
+    target.write_text("external edit\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="changed after the AI preview"):
+        manager.write_text("app.py", "AI proposal\n", expected_sha256=expected)
+
+    assert target.read_text(encoding="utf-8") == "external edit\n"

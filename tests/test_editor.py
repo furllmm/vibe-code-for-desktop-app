@@ -114,3 +114,10 @@ def test_workspace_search_results_open_matching_line(tmp_path):
 
     editor = panel.tabs.currentWidget()
     assert editor.textCursor().blockNumber() == 1
+
+
+def test_qt_selection_offsets_convert_utf16_to_python_codepoints():
+    from vibe_code.editor.panel import EditorPanel
+
+    assert EditorPanel._qt_position_to_python_index("🙂abc", 2) == 1
+    assert EditorPanel._qt_position_to_python_index("🙂abc", 5) == 4

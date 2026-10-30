@@ -167,3 +167,10 @@ print(result.success, result.output_dir, result.output)
 Plan creation is side-effect free. Execution requires an explicit trusted-workspace approval, runs argument arrays with `shell=False`, captures diagnostics, and has a bounded timeout. Only plans issued by the same engine instance can be executed; output and entrypoint paths are confined to the workspace. Project build hooks and packaging configuration are still executable code, so only package workspaces you trust.
 
 AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow with live output and cancellation is now available. Percentage-based progress, installer-specific configuration, signing, and release publishing remain future work. No package is built automatically when a workspace is opened.
+
+
+## AI edit selection (Phase 12)
+
+Select code in the integrated editor and choose **AI Edit Selection**. Enter an instruction; the provider receives the selected range plus a bounded amount of surrounding file context and must return a structured replacement. The proposal is shown as a unified diff before any write. **Apply Edit** records the accepted full-file change through the existing change manager, so it appears in the Changes panel and can be rolled back.
+
+The proposal service does not write files. Invalid provider output is rejected, edits are limited to the existing 2 MiB editor file cap (and 256 KiB selection cap), and the UI discards a proposal if the editor or on-disk file changed while the model was working. The final write also checks the original SHA-256 before recording the change. The feature edits only the selected range in one file; it does not run generated code or silently modify neighboring files.

@@ -38,7 +38,13 @@ class ChangeManager:
         self.manifest_path = self.state_root / "manifest.json"
         self.state_root.mkdir(parents=True, exist_ok=True)
 
-    def write_text(self, relative_path: str, content: str) -> ChangeRecord:
+    def write_text(
+        self,
+        relative_path: str,
+        content: str,
+        *,
+        expected_sha256: str | None = None,
+    ) -> ChangeRecord:
         normalized = Path(relative_path).as_posix()
         while normalized.startswith("./"):
             normalized = normalized[2:]
@@ -47,6 +53,8 @@ class ChangeManager:
         path = self.filesystem.resolve(relative_path)
         before = path.read_bytes() if path.exists() else None
         before_hash = self._sha256(before) if before is not None else None
+        if expected_sha256 is not None and before_hash != expected_sha256:
+            raise RuntimeError(f"Cannot apply reviewed edit: {normalized} changed after the AI preview")
 
         self._atomic_write(path, content.encode("utf-8"))
         after = path.read_bytes()
