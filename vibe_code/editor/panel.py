@@ -438,6 +438,7 @@ class EditorPanel(QWidget):
         self.selection_edit_requested.emit({
             "editor": editor,
             "path": path.relative_to(self.workspace.root).as_posix(),
+            "workspace_root": str(self.workspace.root),
             "source": source,
             "selected": cursor.selectedText().replace("\u2029", "\n"),
             "start": self._qt_position_to_python_index(source, cursor.selectionStart()),
