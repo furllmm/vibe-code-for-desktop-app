@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -212,7 +212,7 @@ class PackagingDialog(QDialog):
         thread.start()
 
     def _append_output(self, value: str) -> None:
-        self.logs.moveCursor(self.logs.textCursor().MoveOperation.End)
+        self.logs.moveCursor(QTextCursor.MoveOperation.End)
         self.logs.insertPlainText(value)
         self.logs.ensureCursorVisible()
 
