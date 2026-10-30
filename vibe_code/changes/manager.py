@@ -116,8 +116,14 @@ class ChangeManager:
             total_bytes += len(encoded)
             if len(encoded) > 2 * 1024 * 1024 or total_bytes > 4 * 1024 * 1024:
                 raise ValueError("Project edit exceeds the file or total size limit")
+            lexical = self.filesystem.root / normalized
+            cursor = lexical
+            while cursor != self.filesystem.root:
+                if cursor.is_symlink():
+                    raise PermissionError(f"Symlink targets cannot be edited: {normalized}")
+                cursor = cursor.parent
             path = self.filesystem.resolve(normalized)
-            if path.is_symlink() or not path.exists() or not path.is_file():
+            if not path.exists() or not path.is_file():
                 raise ValueError(f"Project edit target is not an existing regular file: {normalized}")
             original = path.read_bytes()
             if b"\x00" in original:
