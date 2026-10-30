@@ -409,6 +409,18 @@ class EditorPanel(QWidget):
         self.find_status.setText("Found")
 
 
+    @staticmethod
+    def _qt_position_to_python_index(text: str, position: int) -> int:
+        """Convert QTextCursor UTF-16 offsets to Python code-point offsets."""
+        units = 0
+        for index, character in enumerate(text):
+            if units >= position:
+                return index
+            units += 2 if ord(character) > 0xFFFF else 1
+        if units == position:
+            return len(text)
+        raise ValueError("Text cursor position splits a Unicode character")
+
     def request_ai_selection_edit(self) -> None:
         editor = self.tabs.currentWidget()
         if not isinstance(editor, CodeEditor):
@@ -428,8 +440,8 @@ class EditorPanel(QWidget):
             "path": path.relative_to(self.workspace.root).as_posix(),
             "source": source,
             "selected": cursor.selectedText().replace("\u2029", "\n"),
-            "start": cursor.selectionStart(),
-            "end": cursor.selectionEnd(),
+            "start": self._qt_position_to_python_index(source, cursor.selectionStart()),
+            "end": self._qt_position_to_python_index(source, cursor.selectionEnd()),
             "disk_hash": getattr(editor, "_disk_hash", ""),
         })
 
