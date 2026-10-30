@@ -188,3 +188,10 @@ The analysis service accepts only the three supported task types, treats source 
 Select a range in the integrated editor and choose **Ask AI about Selection**. A dedicated conversation opens with a frozen snapshot of the selected code and up to 20 surrounding lines on either side. Ask follow-up questions without reselecting the source; the snapshot remains fixed for that conversation, so the assistant never silently switches context if the editor changes.
 
 The chat uses the configured provider through the provider-neutral interface, exposes no workspace tools, and runs requests outside the Qt GUI thread. It is read-only: it cannot write files or execute code. Source text is treated as untrusted data rather than instructions. Questions, responses, source size, and retained history are bounded; failed requests do not enter conversation history. AI answers are suggestions and should be checked against the actual project.
+
+
+## Project-wide AI chat (Phase 15)
+
+Use **Chat with Project** in the workspace toolbar to ask questions about the whole project. For each question, the context service ranks relevant files and retrieves a bounded set of source excerpts; follow-up questions retain a bounded conversation history and retrieve context again for the new question. If a source file is open in the editor, it is prioritized as additional context.
+
+This feature is read-only: it exposes no workspace tools and cannot edit files or execute commands. Retrieved project content is treated as untrusted reference data, not instructions. Context discovery skips common generated/dependency folders, symlinks, common secret/config credential filenames and key/certificate file types, and applies file-count, file-size, scan-size, and token-budget limits. These filters reduce accidental disclosure but cannot guarantee that arbitrary credentials embedded in ordinary source files are detected. Relevant source excerpts are sent to the configured AI provider; review provider privacy and data-retention settings before use.
