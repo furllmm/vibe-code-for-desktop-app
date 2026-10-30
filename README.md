@@ -213,3 +213,10 @@ Known test commands are selected from project manifests (Python/pytest, Cargo, G
 If tests, build, or preview startup fail, the diagnostics are shown in the editor dialog. **Ask AI for Fix** sends the bounded diagnostics with the current project context and requests a new full-file proposal. The repair appears as another unified diff; it is not applied automatically. The user must review and choose **Apply & Validate** again. Each accepted repair is separately recorded in the Changes panel and can be rolled back. Validation success leaves the preview running when it survives the startup window; the main window then resumes preview log capture.
 
 This is a startup smoke check, not a full GUI interaction or long-duration health test. The app does not claim that skipped tests passed, and a process that exits cleanly during the startup window is distinguished from a crash. Test/build execution is not sandboxed; workspace trust is an explicit user responsibility.
+
+
+## AI debugger (Phase 18)
+
+After a failed validation, **Debug with AI** extracts source locations from common Python traceback, compiler, Rust, Java and .NET diagnostic formats. A location is included only when it resolves to an existing, eligible text source file inside the current workspace; symlinked, outside, missing, sensitive, unsupported and oversized files are excluded. A small surrounding excerpt is supplied with the bounded validation output to help the model correlate the failure with the code.
+
+Common inline credential patterns are redacted before diagnostics are sent to the configured AI provider. This is best-effort redaction, not a guarantee that logs contain no secrets; inspect provider privacy settings and avoid sharing sensitive workspaces. Logs and source excerpts are untrusted data. The debugger only prepares a reviewed project-edit proposal: it does not apply changes or execute commands. Review the diff and explicitly choose **Apply & Validate** to accept and re-run validation.
