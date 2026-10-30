@@ -423,8 +423,7 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage("AI is preparing a selection edit…")
-        if self.editor_panel is not None:
-            self.editor_panel.ai_edit_selection_button.setEnabled(False)
+        self._set_selection_actions_enabled(False)
         thread = QThread(self)
         worker = AgentWorker(
             None,
