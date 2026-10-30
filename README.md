@@ -174,3 +174,10 @@ AppImage generation currently expects the project or user to prepare the AppDir 
 Select code in the integrated editor and choose **AI Edit Selection**. Enter an instruction; the provider receives the selected range plus a bounded amount of surrounding file context and must return a structured replacement. The proposal is shown as a unified diff before any write. **Apply Edit** records the accepted full-file change through the existing change manager, so it appears in the Changes panel and can be rolled back.
 
 The proposal service does not write files. Invalid provider output is rejected, edits are limited to the existing 2 MiB editor file cap (and 256 KiB selection cap), and the UI discards a proposal if the editor or on-disk file changed while the model was working. The final write also checks the original SHA-256 before recording the change. The feature edits only the selected range in one file; it does not run generated code or silently modify neighboring files.
+
+
+## AI selection insights (Phase 13)
+
+The editor now offers three read-only actions for selected code: **Explain Selection**, **Find Bugs**, and **Suggest Improvements**. Each request includes the selected text and up to 20 nearby lines before and after it. Results appear in a separate read-only dialog; this workflow does not write files, run code, or expose workspace tools to the analysis request.
+
+The analysis service accepts only the three supported task types, treats source text as untrusted input, limits the selection to 256 KiB, bounds surrounding context, and rejects empty or oversized model responses. AI findings are suggestions, not proof that a defect exists or that the code is secure.

@@ -121,3 +121,42 @@ def test_qt_selection_offsets_convert_utf16_to_python_codepoints():
 
     assert EditorPanel._qt_position_to_python_index("🙂abc", 2) == 1
     assert EditorPanel._qt_position_to_python_index("🙂abc", 5) == 4
+
+
+def test_ai_selection_analysis_emits_selected_code_and_nearby_context(tmp_path):
+    source = tmp_path / "main.py"
+    source.write_text("before = 1\nprint('selected')\nafter = 2\n", encoding="utf-8")
+    panel = EditorPanel(Workspace(tmp_path))
+    editor = panel.open_file(source)
+    selected = "print('selected')"
+    cursor = editor.textCursor()
+    cursor.setPosition(editor.toPlainText().index(selected))
+    cursor.setPosition(
+        editor.toPlainText().index(selected) + len(selected),
+        cursor.MoveMode.KeepAnchor,
+    )
+    editor.setTextCursor(cursor)
+    captured = []
+    panel.selection_analysis_requested.connect(captured.append)
+
+    panel.request_ai_selection_analysis("bugs")
+
+    assert len(captured) == 1
+    assert captured[0]["analysis_type"] == "bugs"
+    assert captured[0]["path"] == "main.py"
+    assert captured[0]["selected"] == selected
+    assert captured[0]["context_before"] == "before = 1"
+    assert captured[0]["context_after"] == "after = 2"
+
+
+def test_ai_selection_analysis_requires_a_selection(tmp_path):
+    source = tmp_path / "main.py"
+    source.write_text("print('hello')\n", encoding="utf-8")
+    panel = EditorPanel(Workspace(tmp_path))
+    panel.open_file(source)
+    captured = []
+    panel.selection_analysis_requested.connect(captured.append)
+
+    panel.request_ai_selection_analysis("explain")
+
+    assert captured == []

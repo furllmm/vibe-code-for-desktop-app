@@ -179,6 +179,7 @@ class EditorPanel(QWidget):
 
     status_message = Signal(str)
     selection_edit_requested = Signal(object)
+    selection_analysis_requested = Signal(object)
 
     def __init__(self, workspace: Workspace, parent=None) -> None:
         super().__init__(parent)
@@ -227,6 +228,15 @@ class EditorPanel(QWidget):
         self.ai_edit_selection_button = QPushButton("AI Edit Selection")
         self.ai_edit_selection_button.clicked.connect(self.request_ai_selection_edit)
         edit_row.addWidget(self.ai_edit_selection_button)
+        self.ai_explain_selection_button = QPushButton("Explain Selection")
+        self.ai_explain_selection_button.clicked.connect(lambda: self.request_ai_selection_analysis("explain"))
+        edit_row.addWidget(self.ai_explain_selection_button)
+        self.ai_review_selection_button = QPushButton("Find Bugs")
+        self.ai_review_selection_button.clicked.connect(lambda: self.request_ai_selection_analysis("bugs"))
+        edit_row.addWidget(self.ai_review_selection_button)
+        self.ai_improve_selection_button = QPushButton("Suggest Improvements")
+        self.ai_improve_selection_button.clicked.connect(lambda: self.request_ai_selection_analysis("improve"))
+        edit_row.addWidget(self.ai_improve_selection_button)
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
         self.tabs = QTabWidget()
@@ -444,6 +454,37 @@ class EditorPanel(QWidget):
             "start": self._qt_position_to_python_index(source, cursor.selectionStart()),
             "end": self._qt_position_to_python_index(source, cursor.selectionEnd()),
             "disk_hash": getattr(editor, "_disk_hash", ""),
+        })
+
+
+    def request_ai_selection_analysis(self, analysis_type: str) -> None:
+        if analysis_type not in {"explain", "bugs", "improve"}:
+            self.status_message.emit("Unsupported AI analysis action")
+            return
+        editor = self.tabs.currentWidget()
+        if not isinstance(editor, CodeEditor):
+            self.status_message.emit("Open a file and select code first")
+            return
+        cursor = editor.textCursor()
+        if not cursor.hasSelection():
+            self.status_message.emit("Select the code you want the AI to analyze")
+            return
+        path = getattr(editor, "_workspace_path", None)
+        if path is None:
+            self.status_message.emit("The selected editor tab has no workspace file")
+            return
+        source = editor.toPlainText()
+        start = self._qt_position_to_python_index(source, cursor.selectionStart())
+        end = self._qt_position_to_python_index(source, cursor.selectionEnd())
+        before_lines = source[:start].splitlines()
+        after_lines = source[end:].lstrip("\r\n").splitlines()
+        self.selection_analysis_requested.emit({
+            "analysis_type": analysis_type,
+            "path": path.relative_to(self.workspace.root).as_posix(),
+            "workspace_root": str(self.workspace.root),
+            "selected": source[start:end],
+            "context_before": "\n".join(before_lines[-20:]),
+            "context_after": "\n".join(after_lines[:20]),
         })
 
     def search_all_files(self) -> None:
