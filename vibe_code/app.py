@@ -44,6 +44,8 @@ from vibe_code.changes.panel import ChangePanel
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
+    CMakeAdapter,
+    JavaAdapter,
     DotNetAdapter,
     ElectronAdapter,
     GenericPreviewAdapter,
@@ -288,6 +290,8 @@ class MainWindow(QMainWindow):
             entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
             registry = AdapterRegistry((
                 PythonPySide6Adapter(entrypoint),
+                CMakeAdapter(),
+                JavaAdapter(),
                 RustCargoAdapter(),
                 GoAdapter(),
                 DotNetAdapter(),
