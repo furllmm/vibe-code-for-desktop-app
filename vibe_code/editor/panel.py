@@ -5,8 +5,8 @@ import os
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QRegularExpression, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtCore import QRegularExpression, Signal
+from PySide6.QtGui import QColor, QFont, QKeySequence, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
