@@ -38,8 +38,13 @@ class ChangeManager:
         self.manifest_path = self.state_root / "manifest.json"
         self.state_root.mkdir(parents=True, exist_ok=True)
 
-    def write_text(self, relative_path: str, content: str) -> ChangeRecord:
+    def write_text(
+        self,
+        relative_path: str,
+        content: str,
+        *,
         expected_sha256: str | None = None,
+    ) -> ChangeRecord:
         normalized = Path(relative_path).as_posix()
         while normalized.startswith("./"):
             normalized = normalized[2:]
