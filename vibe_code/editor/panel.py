@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 import re
@@ -9,11 +10,15 @@ from pathlib import Path
 from PySide6.QtCore import QRegularExpression, Signal, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QPlainTextEdit, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QTextEdit,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from vibe_code.workspace import Workspace
+from .workspace_search import (
+    apply_replacement_plan, build_replacement_plan, search_workspace,
+)
 
 
 MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024
@@ -168,13 +173,6 @@ class CodeEditor(QPlainTextEdit):
             return
         super().keyPressEvent(event)
 
-    def keyPressEvent(self, event) -> None:
-        if event.matches(QKeySequence.StandardKey.Find):
-            self.find_requested.emit()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
 
 class EditorPanel(QWidget):
     """Workspace-confined, tabbed text editor with explicit save/discard prompts."""
@@ -189,6 +187,30 @@ class EditorPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
+
+        workspace_search_row = QHBoxLayout()
+        self.workspace_search_input = QLineEdit()
+        self.workspace_search_input.setPlaceholderText("Search in workspace…")
+        self.workspace_replace_input = QLineEdit()
+        self.workspace_replace_input.setPlaceholderText("Replace with…")
+        self.workspace_case_sensitive = QCheckBox("Case sensitive")
+        self.workspace_search_button = QPushButton("Search All")
+        self.workspace_search_button.clicked.connect(self.search_all_files)
+        self.workspace_replace_button = QPushButton("Preview Replace")
+        self.workspace_replace_button.clicked.connect(self.preview_replace_all)
+        workspace_search_row.addWidget(self.workspace_search_input, 2)
+        workspace_search_row.addWidget(self.workspace_replace_input, 2)
+        workspace_search_row.addWidget(self.workspace_case_sensitive)
+        workspace_search_row.addWidget(self.workspace_search_button)
+        workspace_search_row.addWidget(self.workspace_replace_button)
+        layout.addLayout(workspace_search_row)
+
+        self.workspace_search_results = QTreeWidget()
+        self.workspace_search_results.setHeaderLabels(["File / Match", "Line", "Column"])
+        self.workspace_search_results.setMaximumHeight(170)
+        self.workspace_search_results.itemDoubleClicked.connect(self.open_search_result)
+        layout.addWidget(self.workspace_search_results)
+
         find_row = QHBoxLayout()
         self.find_input = QLineEdit()
         self.find_input.setPlaceholderText("Find in current file…")
@@ -378,6 +400,125 @@ class EditorPanel(QWidget):
                 self.find_status.setText("Not found")
                 return
         self.find_status.setText("Found")
+
+    def search_all_files(self) -> None:
+        query = self.workspace_search_input.text()
+        self.workspace_search_results.clear()
+        if not query:
+            self.status_message.emit("Enter text to search for")
+            return
+        try:
+            matches = search_workspace(
+                self.workspace, query,
+                case_sensitive=self.workspace_case_sensitive.isChecked(),
+            )
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Workspace search failed", str(exc))
+            return
+        grouped: dict[Path, QTreeWidgetItem] = {}
+        for match in matches:
+            parent = grouped.get(match.path)
+            if parent is None:
+                relative = match.path.relative_to(self.workspace.root)
+                parent = QTreeWidgetItem([str(relative), "", ""])
+                parent.setData(0, Qt.ItemDataRole.UserRole, str(match.path))
+                self.workspace_search_results.addTopLevelItem(parent)
+                grouped[match.path] = parent
+            child = QTreeWidgetItem([match.text.strip() or "(empty line)", str(match.line), str(match.column)])
+            child.setData(0, Qt.ItemDataRole.UserRole, str(match.path))
+            child.setData(0, Qt.ItemDataRole.UserRole + 1, match.line)
+            parent.addChild(child)
+        self.workspace_search_results.expandAll()
+        self.status_message.emit(
+            f"Found {len(matches)} match(es)"
+            + (" (result limit reached)" if len(matches) >= 5000 else "")
+        )
+
+    def open_search_result(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        raw_path = item.data(0, Qt.ItemDataRole.UserRole)
+        line = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if not raw_path:
+            return
+        try:
+            editor = self.open_file(str(raw_path))
+            if line is not None:
+                editor.go_to_line(int(line))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot open search result", str(exc))
+
+    def preview_replace_all(self) -> None:
+        query = self.workspace_search_input.text()
+        replacement = self.workspace_replace_input.text()
+        if not query:
+            self.status_message.emit("Enter text to replace")
+            return
+        try:
+            plan = build_replacement_plan(
+                self.workspace, query, replacement,
+                case_sensitive=self.workspace_case_sensitive.isChecked(),
+            )
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Replacement preview failed", str(exc))
+            return
+        if not plan.files:
+            self.status_message.emit("No matching text to replace")
+            return
+
+        preview = QPlainTextEdit()
+        preview.setReadOnly(True)
+        preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        chunks = [
+            f"{len(plan.files)} file(s), {plan.match_count} replacement(s)\n"
+            "Review the diff below. Apply is enabled only after this preview.\n"
+        ]
+        remaining = 24_000
+        for item in plan.files:
+            relative = item.path.relative_to(self.workspace.root)
+            before = item.before.decode("utf-8").splitlines(keepends=True)
+            after = item.after.decode("utf-8").splitlines(keepends=True)
+            diff = "".join(difflib.unified_diff(
+                before, after, fromfile=f"a/{relative}", tofile=f"b/{relative}"
+            ))
+            if len(diff) > remaining:
+                chunks.append("\n… preview truncated …\n")
+                break
+            chunks.append(diff)
+            remaining -= len(diff)
+        preview.setPlainText("\n".join(chunks))
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Review Workspace Replacements")
+        dialog.resize(900, 600)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel
+        )
+        apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        apply_button.setText("Apply Replacements")
+        apply_button.clicked.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.addWidget(preview)
+        dialog_layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.status_message.emit("Replacement cancelled")
+            return
+        try:
+            count = apply_replacement_plan(self.workspace, plan)
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Replacement not applied", str(exc))
+            return
+        for index in range(self.tabs.count()):
+            editor = self.tabs.widget(index)
+            if not isinstance(editor, CodeEditor):
+                continue
+            editor_path = self._paths.get(index)
+            changed = next((item for item in plan.files if item.path == editor_path), None)
+            if changed is not None:
+                editor.setPlainText(changed.after.decode("utf-8"))
+                editor._disk_hash = hashlib.sha256(changed.after).hexdigest()
+                editor.document().setModified(False)
+        self.status_message.emit(f"Replaced {count} occurrence(s) in {len(plan.files)} file(s)")
+        self.search_all_files()
 
     def go_to_line(self, line_number: int) -> bool:
         editor = self.tabs.currentWidget()

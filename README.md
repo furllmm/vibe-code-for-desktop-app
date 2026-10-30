@@ -125,11 +125,11 @@ CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMak
 
 ## Code editor (Phase 9)
 
-The workspace now includes an integrated tabbed text editor. Double-click a file in the project tree to open it; opening an already-open file focuses its existing tab. The editor includes lightweight syntax highlighting for Python, JavaScript/TypeScript, C/C++, Java, JSON, Markdown, and common configuration formats, a line-number gutter, active-line highlighting, Go to Line (Ctrl+G), Find in File (Ctrl+F), and Save (Ctrl+S).
+The workspace now includes an integrated tabbed text editor. Double-click a file in the project tree to open it; opening an already-open file focuses its existing tab. The editor includes lightweight syntax highlighting for Python, JavaScript/TypeScript, C/C++, Java, JSON, Markdown, and common configuration formats, a line-number gutter, active-line highlighting, Go to Line (Ctrl+G), Find in File (Ctrl+F), and Save (Ctrl+S). Workspace search (Ctrl+Shift+F) scans text files, opens matches at the correct line, and offers a reviewed unified-diff preview before applying multi-file replacements. Search skips common generated/dependency folders; replacement is limited to 100 files and rejects files changed after preview.
 
 File handling is deliberately conservative: only UTF-8 text files up to 2 MiB are editable, binary files and paths outside the workspace are rejected, and saves use a temporary file plus atomic replacement. The editor hashes the original file and refuses to overwrite an external modification; reopen the file to reconcile external changes. Closing a modified tab or switching workspaces asks whether to save, discard, or cancel.
 
-This is an initial editor foundation, not a full IDE editor yet. Language-server integration, diagnostics, autocomplete, multi-file search/replace, and advanced diff editing remain future work.
+This is an initial editor foundation, not a full IDE editor yet. Language-server integration, diagnostics, and autocomplete remain future work.
 
 ## Packaging workflow (Phase 8)
 
