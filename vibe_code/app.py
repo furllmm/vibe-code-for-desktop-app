@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QMainWindow,
+    QLabel,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -42,6 +43,7 @@ from vibe_code.tools.filesystem import WorkspaceFS
 from vibe_code.changes import ChangeManager
 from vibe_code.changes.panel import ChangePanel
 from vibe_code.packaging.dialog import PackagingDialog
+from vibe_code.editor import EditorPanel
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
@@ -85,6 +87,14 @@ class MainWindow(QMainWindow):
         package_action = QAction("Package Project", self)
         package_action.triggered.connect(self.open_packaging)
         toolbar.addAction(package_action)
+        save_action = QAction('Save File', self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self.save_current_file)
+        toolbar.addAction(save_action)
+        find_action = QAction('Find in File', self)
+        find_action.setShortcut(QKeySequence.StandardKey.Find)
+        find_action.triggered.connect(self.show_editor_find)
+        toolbar.addAction(find_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -98,6 +108,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         self.project_tree = QTreeWidget()
         self.project_tree.setHeaderLabel("Project")
+        self.project_tree.itemDoubleClicked.connect(self._open_tree_item)
 
         chat_splitter = QSplitter()
         chat_splitter.setOrientation(2)
@@ -116,11 +127,18 @@ class MainWindow(QMainWindow):
         chat_splitter.addWidget(self.run_button)
         chat_splitter.setSizes([480, 180, 48])
 
+        self.center_tabs = QTabWidget()
+        self.center_tabs.addTab(chat_splitter, "AI Agent")
+        self.editor_panel: EditorPanel | None = None
+        self.editor_placeholder = QLabel("Open a workspace, then double-click a source file to edit it.")
+        self.editor_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_tabs.addTab(self.editor_placeholder, "Editor")
+
         self.context_panel = ContextPanel()
         self.change_panel: ChangePanel | None = None
 
         splitter.addWidget(self.project_tree)
-        splitter.addWidget(chat_splitter)
+        splitter.addWidget(self.center_tabs)
         self.right_tabs = QTabWidget()
         self.right_tabs.addTab(self.context_panel, "Context")
         splitter.addWidget(self.right_tabs)
@@ -133,14 +151,56 @@ class MainWindow(QMainWindow):
         if not selected:
             return
         try:
-            self.workspace = Workspace(Path(selected))
+            new_workspace = Workspace(Path(selected))
         except (OSError, ValueError) as exc:
             self.statusBar().showMessage(f"Workspace error: {exc}")
             return
-
+        if self.editor_panel is not None and not self.editor_panel.confirm_close_all():
+            return
+        self.workspace = new_workspace
+        self._set_editor_workspace(new_workspace)
         self.load_workspace(self.workspace.root)
         self.refresh_context()
         self.statusBar().showMessage(f"Workspace: {self.workspace.root}")
+
+    def _set_editor_workspace(self, workspace: Workspace) -> None:
+        if self.editor_panel is not None:
+            index = self.center_tabs.indexOf(self.editor_panel)
+            if index >= 0:
+                self.center_tabs.removeTab(index)
+            self.editor_panel.deleteLater()
+        self.editor_panel = EditorPanel(workspace, self)
+        self.editor_panel.status_message.connect(self.statusBar().showMessage)
+        placeholder_index = self.center_tabs.indexOf(self.editor_placeholder)
+        if placeholder_index >= 0:
+            self.center_tabs.removeTab(placeholder_index)
+        self.center_tabs.insertTab(1, self.editor_panel, "Editor")
+
+    def _open_tree_item(self, item: QTreeWidgetItem, _column: int = 0) -> None:
+        if self.workspace is None:
+            return
+        raw_path = item.data(0, Qt.ItemDataRole.UserRole)
+        if not raw_path:
+            return
+        path = Path(str(raw_path))
+        if path.is_dir():
+            return
+        if self.editor_panel is None:
+            self._set_editor_workspace(self.workspace)
+        try:
+            self.editor_panel.open_file(path)
+            self.center_tabs.setCurrentWidget(self.editor_panel)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot open file", str(exc))
+
+    def save_current_file(self) -> None:
+        if self.editor_panel is not None:
+            self.editor_panel.save_current()
+
+    def show_editor_find(self) -> None:
+        if self.editor_panel is not None:
+            self.center_tabs.setCurrentWidget(self.editor_panel)
+            self.editor_panel.show_find()
 
     def open_packaging(self) -> None:
         if self.workspace is None:
@@ -509,6 +569,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self._handle_preview_failure(failure))
 
     def closeEvent(self, event) -> None:
+        if self.editor_panel is not None and not self.editor_panel.confirm_close_all():
+            event.ignore()
+            return
         self.stop_preview()
         super().closeEvent(event)
 
@@ -520,6 +583,7 @@ class MainWindow(QMainWindow):
         if path != path.anchor and path.name.startswith("."):
             return
         item = QTreeWidgetItem(parent, [path.name or str(path)])
+        item.setData(0, Qt.ItemDataRole.UserRole, str(path))
         if not path.is_dir():
             return
         try:
