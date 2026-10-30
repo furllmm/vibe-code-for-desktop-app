@@ -87,7 +87,7 @@ def test_editor_does_not_recreate_file_deleted_externally(tmp_path, monkeypatch)
 
 def test_editor_line_numbers_and_go_to_line(tmp_path):
     source = tmp_path / "lines.py"
-    source.write_text("one\\ntwo\\nthree\\n", encoding="utf-8")
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
     panel = EditorPanel(Workspace(tmp_path))
     editor = panel.open_file(source)
 
