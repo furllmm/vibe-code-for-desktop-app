@@ -5,6 +5,7 @@ import zipfile
 import pytest
 
 from vibe_code.packaging import (
+    AppImageAdapter,
     JavaJPackageAdapter,
     PackageRequest,
     PackagingEngine,
@@ -140,4 +141,43 @@ def test_cpack_rejects_unsupported_generator(tmp_path, monkeypatch):
         CPackAdapter().create_plan(
             tmp_path,
             PackageRequest("cpack", "Demo", package_type="random-installer"),
+        )
+
+
+
+def test_appimage_adapter_requires_appdir_and_uses_appimagetool(tmp_path, monkeypatch):
+    appdir = tmp_path / "Demo.AppDir"
+    appdir.mkdir()
+    (appdir / "demo.desktop").write_text(
+        "[Desktop Entry]\\nType=Application\\nName=Demo\\nExec=demo\\n",
+        encoding="utf-8",
+    )
+    (appdir / "demo.png").write_bytes(b"png")
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/appimagetool")
+
+    plan = AppImageAdapter().create_plan(
+        tmp_path,
+        PackageRequest("appimage", "Demo", entrypoint="Demo.AppDir"),
+    )
+
+    assert plan.command == (
+        "/usr/bin/appimagetool",
+        str(appdir),
+        str(tmp_path / "dist" / "Demo.AppImage"),
+    )
+    assert not plan.output_dir.exists()
+
+
+def test_appimage_adapter_rejects_appdir_without_desktop_file(tmp_path, monkeypatch):
+    appdir = tmp_path / "Demo.AppDir"
+    appdir.mkdir()
+    (appdir / "demo.png").write_bytes(b"png")
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/appimagetool")
+
+    with pytest.raises(ValueError, match=".desktop"):
+        AppImageAdapter().create_plan(
+            tmp_path,
+            PackageRequest("appimage", "Demo", entrypoint="Demo.AppDir"),
         )
