@@ -54,7 +54,7 @@ class ChangeManager:
         before = path.read_bytes() if path.exists() else None
         before_hash = self._sha256(before) if before is not None else None
         if expected_sha256 is not None and before_hash != expected_sha256:
-            raise RuntimeError(f\"Cannot apply reviewed edit: {normalized} changed after the AI preview\")
+            raise RuntimeError(f"Cannot apply reviewed edit: {normalized} changed after the AI preview")
 
         self._atomic_write(path, content.encode("utf-8"))
         after = path.read_bytes()
