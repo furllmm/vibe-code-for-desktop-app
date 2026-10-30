@@ -52,6 +52,8 @@ from vibe_code.packaging.dialog import PackagingDialog
 from vibe_code.editor import EditorPanel
 from vibe_code.editor.selection_edit import propose_selection_edit
 from vibe_code.editor.selection_analysis import analyze_selection
+from vibe_code.editor.selection_chat import SelectionChatSession
+from vibe_code.editor.selection_chat_dialog import SelectionChatDialog
 from vibe_code.workspace import Workspace
 from vibe_code.runtime import (
     AdapterRegistry,
@@ -191,6 +193,7 @@ class MainWindow(QMainWindow):
         self.editor_panel.status_message.connect(self.statusBar().showMessage)
         self.editor_panel.selection_edit_requested.connect(self._request_ai_selection_edit)
         self.editor_panel.selection_analysis_requested.connect(self._request_ai_selection_analysis)
+        self.editor_panel.selection_chat_requested.connect(self._request_ai_selection_chat)
         placeholder_index = self.center_tabs.indexOf(self.editor_placeholder)
         if placeholder_index >= 0:
             self.center_tabs.removeTab(placeholder_index)
@@ -395,6 +398,30 @@ class MainWindow(QMainWindow):
         self._worker = worker
         thread.start()
 
+
+
+    def _request_ai_selection_chat(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict) or self.workspace is None:
+            return
+        try:
+            if str(self.workspace.root) != snapshot.get("workspace_root"):
+                raise ValueError("Workspace changed; select the code again")
+            path = str(snapshot["path"])
+            self.workspace.resolve(path)
+            provider = self._build_provider()
+            session = SelectionChatSession(
+                provider,
+                path,
+                str(snapshot["selected"]),
+                context_before=str(snapshot.get("context_before", "")),
+                context_after=str(snapshot.get("context_after", "")),
+            )
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "AI chat unavailable", str(exc))
+            return
+
+        dialog = SelectionChatDialog(session, path, self)
+        dialog.exec()
 
     def _request_ai_selection_edit(self, snapshot: object) -> None:
         if not isinstance(snapshot, dict) or self.workspace is None:
