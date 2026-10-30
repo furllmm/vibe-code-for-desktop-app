@@ -108,6 +108,9 @@ class ChangeManager:
             if normalized in seen:
                 raise ValueError(f"Duplicate project edit target: {normalized}")
             seen.add(normalized)
+            relative = Path(normalized)
+            if relative.is_absolute() or ".." in relative.parts or "\\" in normalized or ":" in normalized:
+                raise PermissionError(f"Invalid workspace-relative edit path: {normalized}")
             if normalized == ".vibe-code" or normalized.startswith(".vibe-code/"):
                 raise PermissionError("IDE state files cannot be edited by project AI")
             if not isinstance(content, str):
