@@ -173,8 +173,7 @@ class ProjectEditDialog(QDialog):
         self.preview.setPlainText(value.output or "Validation produced no output.")
         if value.success:
             self.status.setText("Tests/build/preview validation succeeded.")
-            self._set_actions_enabled(True)
-            super().accept()
+            self._pending_accept = True
             return
         self.status.setText(
             "Validation failed. The accepted changes are still in place. "
