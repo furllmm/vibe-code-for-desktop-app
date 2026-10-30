@@ -155,9 +155,9 @@ def test_write_many_rejects_symlink_targets(tmp_path):
 
 def test_proposal_rejects_nul_bytes_in_replacement(tmp_path):
     workspace = setup_workspace(tmp_path)
-    original = "print('hello')\\n"
+    original = "print('hello')\n"
     session = ProjectEditSession(
-        FakeProvider(proposal("src/main.py", original, "bad\\x00content")),
+        FakeProvider(proposal("src/main.py", original, "bad\x00content")),
         workspace, FakeContext()
     )
     with pytest.raises(ValueError, match="binary content"):
