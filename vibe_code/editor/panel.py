@@ -637,6 +637,26 @@ class EditorPanel(QWidget):
         self.status_message.emit(f"Replaced {count} occurrence(s) in {len(plan.files)} file(s)")
         self.search_all_files()
 
+    def refresh_open_files(self) -> None:
+        """Reload clean tabs after an approved external project-wide edit."""
+        for index in range(self.tabs.count()):
+            editor = self.tabs.widget(index)
+            if not isinstance(editor, CodeEditor) or editor.document().isModified():
+                continue
+            path = self._paths.get(index)
+            if path is None or not path.exists() or not path.is_file():
+                continue
+            try:
+                raw = path.read_bytes()
+                if len(raw) > MAX_EDITABLE_FILE_BYTES or b"\x00" in raw:
+                    continue
+                text = raw.decode("utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                continue
+            editor.setPlainText(text)
+            editor._disk_hash = hashlib.sha256(raw).hexdigest()
+            editor.document().setModified(False)
+
     def go_to_line(self, line_number: int) -> bool:
         editor = self.tabs.currentWidget()
         if not isinstance(editor, CodeEditor):
