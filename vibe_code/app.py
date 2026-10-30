@@ -39,6 +39,8 @@ from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
 from vibe_code.chat import ProjectChatSession
 from vibe_code.chat.dialog import ProjectChatDialog
+from vibe_code.editor.project_edit import ProjectEditSession
+from vibe_code.editor.project_edit_dialog import ProjectEditDialog
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -101,6 +103,9 @@ class MainWindow(QMainWindow):
         project_chat_action = QAction("Chat with Project", self)
         project_chat_action.triggered.connect(self.open_project_chat)
         toolbar.addAction(project_chat_action)
+        project_edit_action = QAction("Edit Project with AI", self)
+        project_edit_action.triggered.connect(self.open_project_edit)
+        toolbar.addAction(project_edit_action)
         package_action = QAction("Package Project", self)
         package_action.triggered.connect(self.open_packaging)
         toolbar.addAction(package_action)
@@ -278,6 +283,45 @@ class MainWindow(QMainWindow):
             return
         dialog = ProjectChatDialog(session, self.workspace.root.name, self)
         dialog.exec()
+
+    def open_project_edit(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another AI task is already running")
+            return
+        instruction, accepted = QInputDialog.getMultiLineText(
+            self, "Edit Project with AI",
+            "Describe the project-wide change. Nothing is written until you review and apply the diff.",
+            "",
+        )
+        if not accepted:
+            return
+        if not instruction.strip():
+            self.statusBar().showMessage("Enter a change request first")
+            return
+        try:
+            provider = self._build_provider()
+            session = ProjectEditSession(
+                provider, self.workspace, context_service=self.context_service
+            )
+            changes = self._change_manager or ChangeManager(WorkspaceFS(self.workspace.root))
+            self._change_manager = changes
+            if self.change_panel is None:
+                self.change_panel = ChangePanel(changes)
+                self.change_panel.rollback_requested.connect(self._rollback_change)
+                self.right_tabs.addTab(self.change_panel, "Changes")
+            self.change_panel.refresh()
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Project edit unavailable", str(exc))
+            return
+        dialog = ProjectEditDialog(session, changes, instruction, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.change_panel.refresh()
+            if self.editor_panel is not None:
+                self.editor_panel.refresh_open_files()
+            self.statusBar().showMessage("AI project changes applied and recorded for rollback")
 
     def open_packaging(self) -> None:
         if self.workspace is None:
