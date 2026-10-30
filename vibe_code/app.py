@@ -481,8 +481,9 @@ class MainWindow(QMainWindow):
             buttons = QDialogButtonBox(
                 QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel
             )
-            buttons.button(QDialogButtonBox.StandardButton.Apply).setText("Apply Edit")
-            buttons.accepted.connect(dialog.accept)
+            apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+            apply_button.setText("Apply Edit")
+            apply_button.clicked.connect(dialog.accept)
             buttons.rejected.connect(dialog.reject)
             layout = QVBoxLayout(dialog)
             layout.addWidget(preview)
