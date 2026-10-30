@@ -44,7 +44,7 @@ class PackagingEngine:
                     process.terminate()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
+        except (ProcessLookupError, PermissionError, OSError, subprocess.SubprocessError):
             process.terminate()
         try:
             process.wait(timeout=3)
@@ -145,12 +145,12 @@ class PackagingEngine:
                     return PackagingResult(
                         False,
                         f"Packaging timed out after {plan.timeout_seconds}s.\\n{captured}",
-                        plan.output_dir,
+                        output_dir,
                         process.returncode,
                     )
                 return PackagingResult(
                     process.returncode == 0, captured,
-                    plan.output_dir, process.returncode,
+                    output_dir, process.returncode,
                 )
         except OSError as exc:
             raise RuntimeError(f"Could not run packaging command: {exc}") from exc
