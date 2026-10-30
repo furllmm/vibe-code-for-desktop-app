@@ -178,6 +178,7 @@ class EditorPanel(QWidget):
     """Workspace-confined, tabbed text editor with explicit save/discard prompts."""
 
     status_message = Signal(str)
+    selection_edit_requested = Signal(object)
 
     def __init__(self, workspace: Workspace, parent=None) -> None:
         super().__init__(parent)
@@ -222,6 +223,12 @@ class EditorPanel(QWidget):
         find_row.addWidget(self.find_next_button)
         find_row.addWidget(self.find_status)
         layout.addLayout(find_row)
+        edit_row = QHBoxLayout()
+        self.ai_edit_selection_button = QPushButton("AI Edit Selection")
+        self.ai_edit_selection_button.clicked.connect(self.request_ai_selection_edit)
+        edit_row.addWidget(self.ai_edit_selection_button)
+        edit_row.addStretch(1)
+        layout.addLayout(edit_row)
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -400,6 +407,31 @@ class EditorPanel(QWidget):
                 self.find_status.setText("Not found")
                 return
         self.find_status.setText("Found")
+
+
+    def request_ai_selection_edit(self) -> None:
+        editor = self.tabs.currentWidget()
+        if not isinstance(editor, CodeEditor):
+            self.status_message.emit("Open a file and select code first")
+            return
+        cursor = editor.textCursor()
+        if not cursor.hasSelection():
+            self.status_message.emit("Select the code you want the AI to edit")
+            return
+        path = getattr(editor, "_workspace_path", None)
+        if path is None:
+            self.status_message.emit("The selected editor tab has no workspace file")
+            return
+        source = editor.toPlainText()
+        self.selection_edit_requested.emit({
+            "editor": editor,
+            "path": path.relative_to(self.workspace.root).as_posix(),
+            "source": source,
+            "selected": cursor.selectedText().replace("\u2029", "\n"),
+            "start": cursor.selectionStart(),
+            "end": cursor.selectionEnd(),
+            "disk_hash": getattr(editor, "_disk_hash", ""),
+        })
 
     def search_all_files(self) -> None:
         query = self.workspace_search_input.text()
