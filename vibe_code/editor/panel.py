@@ -10,7 +10,7 @@ from PySide6.QtCore import QRegularExpression, Signal, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
+    QPlainTextEdit, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from vibe_code.workspace import Workspace
@@ -142,7 +142,7 @@ class CodeEditor(QPlainTextEdit):
     def highlight_current_line(self) -> None:
         selections = []
         if not self.isReadOnly():
-            selection = QPlainTextEdit.ExtraSelection()
+            selection = QTextEdit.ExtraSelection()
             selection.format.setBackground(self.palette().alternateBase())
             selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
             selection.cursor = self.textCursor()
