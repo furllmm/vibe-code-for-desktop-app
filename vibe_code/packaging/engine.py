@@ -35,7 +35,13 @@ class PackagingEngine:
             return
         try:
             if os.name == "nt":
-                process.terminate()
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, check=False, timeout=5, shell=False,
+                )
+                if process.poll() is None:
+                    process.terminate()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
@@ -70,7 +76,10 @@ class PackagingEngine:
         if not plan.command or not plan.output_dir.is_absolute():
             raise ValueError("Invalid packaging plan")
 
-        plan.output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = plan.output_dir.resolve()
+        if output_dir != self.workspace and self.workspace not in output_dir.parents:
+            raise ValueError("Package output must stay inside the workspace")
+        output_dir.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
         captured = ""
         offset = 0
@@ -130,7 +139,7 @@ class PackagingEngine:
                 if cancelled:
                     return PackagingResult(
                         False, "Packaging cancelled.\\n" + captured,
-                        plan.output_dir, process.returncode,
+                        output_dir, process.returncode,
                     )
                 if timed_out:
                     return PackagingResult(
