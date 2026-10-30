@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 import json
-from pathlib import Path
 
 from vibe_code.context.models import ContextPack
 from vibe_code.agent.service import AgentRequest, AgentService
@@ -78,7 +76,3 @@ def propose_selection_edit(
     if len(updated.encode("utf-8")) > MAX_SOURCE_BYTES:
         raise ValueError("Edited source exceeds the 2 MiB editor limit")
     return updated
-
-
-def sha256_text(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
