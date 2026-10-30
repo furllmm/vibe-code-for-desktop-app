@@ -98,7 +98,7 @@ class ProjectEditSession:
                 source = raw.decode("utf-8-sig")
             except (OSError, UnicodeDecodeError):
                 continue
-            section = f"--- {relative} sha256={hashlib.sha256(raw).hexdigest()} ---\\n{source}"
+            section = f"--- {relative} sha256={hashlib.sha256(raw).hexdigest()} ---\n{source}"
             if context_chars + len(section) > MAX_CONTEXT_CHARS:
                 continue
             digest = hashlib.sha256(raw).hexdigest()
