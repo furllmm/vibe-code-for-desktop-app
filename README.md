@@ -107,6 +107,8 @@ When a preview adapter is available, the coding agent receives an explicit allow
 
 Automatic preview detection currently supports:
 - Python/PySide6 (runs the detected Python entrypoint)
+- C and C++ projects using CMake (builds in `.vibe-code/build/cmake`; resolves a single executable via the CMake file API)
+- Java Maven or Gradle projects (builds and launches one JAR with a `Main-Class` manifest)
 - Rust/Cargo (builds with `cargo build`, runs the debug binary)
 - Go (builds to `.vibe-code/bin/preview`, then runs it)
 - .NET single-target `.csproj` projects (builds and launches the output assembly)
@@ -116,3 +118,6 @@ Automatic preview detection currently supports:
 Builds use argument arrays with `shell=False`, a bounded timeout, and captured diagnostics. The IDE does not run package installation or arbitrary packaging scripts automatically. Install project dependencies yourself before previewing. Set `VIBE_CODE_PREVIEW_COMMAND` to override automatic detection.
 
 The current .NET adapter intentionally supports one top-level project and one `TargetFramework`; multi-target and solution-level project selection remain future work.
+
+
+CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMake project produces multiple executable targets, automatic preview stops and asks for a single preview target rather than guessing. Java preview requires the corresponding system build tool (`mvn` or `gradle`) and a runnable JAR with a `Main-Class` manifest; dependency/classpath assembly is not inferred. Java build scripts can execute project-defined code and may download dependencies, so use preview only with workspaces you trust. Local build products and IDE change state under `.vibe-code/` are ignored by Git.
