@@ -174,3 +174,47 @@ def test_node_test_script_is_detected(tmp_path):
 def test_validator_requires_positive_timeouts(tmp_path):
     with pytest.raises(ValueError, match="timeouts"):
         ProjectValidator(tmp_path, FakePreview(tmp_path), test_timeout=0)
+
+def test_cmake_ctest_is_scheduled_after_successful_build(tmp_path, monkeypatch):
+    (tmp_path / "CMakeLists.txt").write_text("include(CTest)\n")
+    commands = []
+
+    class Completed:
+        returncode = 0
+        stdout = "all tests passed"
+
+    monkeypatch.setattr(
+        "vibe_code.runtime.validation.subprocess.run",
+        lambda command, **kwargs: (commands.append(command) or Completed()),
+    )
+    preview = FakePreview(tmp_path, status=ProcessResult(0, False))
+    result = ProjectValidator(tmp_path, preview, startup_timeout=0.001).run()
+
+    assert result.success
+    assert commands == [[
+        "ctest", "--test-dir",
+        str(tmp_path.resolve() / ".vibe-code" / "build" / "cmake"),
+        "--output-on-failure",
+    ]]
+    assert [step.name for step in result.steps] == [
+        "Tests", "Build", "Build-system tests", "Preview smoke check"
+    ]
+
+
+def test_cmake_test_failure_prevents_preview_start(tmp_path, monkeypatch):
+    (tmp_path / "CMakeLists.txt").write_text("enable_testing()\n")
+
+    class Completed:
+        returncode = 8
+        stdout = "CTest failed"
+
+    monkeypatch.setattr(
+        "vibe_code.runtime.validation.subprocess.run",
+        lambda *args, **kwargs: Completed(),
+    )
+    preview = FakePreview(tmp_path)
+    result = ProjectValidator(tmp_path, preview).run()
+
+    assert not result.success
+    assert "CTest failed" in result.output
+    assert "start" not in preview.calls
