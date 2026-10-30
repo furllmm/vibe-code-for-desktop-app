@@ -121,7 +121,7 @@ def test_agent_loop_executes_tool_and_returns_final_response() -> None:
     assert provider.requests[1].messages[-1].role == "tool"
     assert provider.requests[1].messages[-1].tool_call_id == "1"
     assert provider.requests[1].messages[2].tool_calls[0].name == "echo"
-    assert provider.requests[1].messages[1].tool_calls[0].arguments == {"text": "tool result"}
+    assert provider.requests[1].messages[2].tool_calls[0].arguments == {"text": "tool result"}
 
 
 def test_agent_loop_rejects_unknown_tool_without_crashing() -> None:
