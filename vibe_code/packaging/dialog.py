@@ -260,6 +260,12 @@ class PackagingDialog(QDialog):
         self.cancel_button.setEnabled(False)
         self.close_button.setEnabled(True)
 
+    def reject(self) -> None:
+        if self._thread is not None:
+            self._cancel()
+            return
+        super().reject()
+
     def closeEvent(self, event) -> None:
         if self._thread is not None:
             self._cancel()
