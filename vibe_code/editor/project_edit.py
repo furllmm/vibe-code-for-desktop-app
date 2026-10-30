@@ -17,6 +17,7 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_INSTRUCTION_BYTES = 4 * 1024
 MAX_CONTEXT_TOKENS = 6000
+MAX_CONTEXT_CHARS = MAX_CONTEXT_TOKENS * 4
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 _SYSTEM_PROMPT = (
@@ -79,6 +80,7 @@ class ProjectEditSession:
         ))
         context_sections: list[str] = []
         source_by_path: dict[str, tuple[str, str]] = {}
+        context_chars = 0
         for item in pack.items:
             if item.content is None:
                 continue
@@ -96,11 +98,13 @@ class ProjectEditSession:
                 source = raw.decode("utf-8-sig")
             except (OSError, UnicodeDecodeError):
                 continue
+            section = f"--- {relative} sha256={hashlib.sha256(raw).hexdigest()} ---\\n{source}"
+            if context_chars + len(section) > MAX_CONTEXT_CHARS:
+                continue
             digest = hashlib.sha256(raw).hexdigest()
             source_by_path[relative] = (source, digest)
-            context_sections.append(
-                f"--- {relative} sha256={digest} ---\n{source}"
-            )
+            context_sections.append(section)
+            context_chars += len(section)
         if not source_by_path:
             raise ValueError("No eligible project source files were retrieved for this request")
         context = "\n\n".join(context_sections)
