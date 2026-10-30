@@ -155,6 +155,8 @@ class ProjectEditSession:
             if digest != expected_digest:
                 raise ValueError(f"AI returned an incorrect original hash for {normalized}")
             encoded = after.encode("utf-8")
+            if b"\x00" in encoded:
+                raise ValueError(f"AI proposed binary content for {normalized}")
             total += len(encoded)
             if len(encoded) > MAX_FILE_BYTES or total > MAX_TOTAL_BYTES:
                 raise ValueError("AI proposal exceeds the per-file or total size limit")
