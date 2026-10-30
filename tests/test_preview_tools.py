@@ -29,10 +29,11 @@ def test_preview_log_tool_reports_exit_and_output(tmp_path: Path) -> None:
     result = None
     for _ in range(100):
         result = GetPreviewLogsTool(engine).execute({})
-        if "Preview exited" in result.output:
+        if "Preview exited" in result.output and "tool-preview" in result.output:
             break
         time.sleep(0.01)
     assert result.ok
+    assert "Preview exited" in result.output
     assert "tool-preview" in result.output
 
 
