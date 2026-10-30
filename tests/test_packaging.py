@@ -69,7 +69,7 @@ def test_java_jpackage_requires_executable_jar_and_creates_plan(tmp_path, monkey
 
     assert plan.command[0] == "/usr/bin/jpackage"
     assert "--main-jar" in plan.command
-    assert plan.command[-3] == "--dest"
+    assert plan.command[-2] == "--dest"
 
 
 def test_java_jpackage_rejects_jar_without_main_class(tmp_path, monkeypatch):
