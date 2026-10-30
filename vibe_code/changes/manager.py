@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import stat
 import difflib
 import uuid
 from dataclasses import dataclass
@@ -347,8 +348,14 @@ class ChangeManager:
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            original_mode = stat.S_IMODE(path.stat().st_mode)
+        except FileNotFoundError:
+            original_mode = None
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         try:
+            if original_mode is not None:
+                os.chmod(temp_name, original_mode)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
                 handle.flush()
