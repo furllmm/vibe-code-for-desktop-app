@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
@@ -96,6 +96,12 @@ class RunCheckpoint:
         return next((t for t in self.tasks if t.status in {"running", "pending"}), None)
 
 
+def _known(cls: type, data: dict) -> dict:
+    """Drop keys written by other app versions so checkpoints survive upgrades/downgrades."""
+    names = {f.name for f in fields(cls)}
+    return {key: value for key, value in data.items() if key in names}
+
+
 class CheckpointStore:
     """Atomic JSON checkpoints under ``.vibe-code/runs``; refuses symlinked paths."""
 
@@ -144,8 +150,8 @@ class CheckpointStore:
             raise RuntimeError("Refusing to read a symlinked checkpoint")
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            tasks = [PlanTask(**task) for task in raw.pop("tasks")]
-            checkpoint = RunCheckpoint(tasks=tasks, **raw)
+            tasks = [PlanTask(**_known(PlanTask, task)) for task in raw.pop("tasks")]
+            checkpoint = RunCheckpoint(tasks=tasks, **_known(RunCheckpoint, raw))
         except FileNotFoundError:
             raise
         except (OSError, UnicodeError, json.JSONDecodeError, TypeError, KeyError, AttributeError) as exc:

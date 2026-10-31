@@ -1316,8 +1316,24 @@ class MainWindow(QMainWindow):
             self._add_tree(child, item)
 
 
-def run() -> int:
-    app = QApplication(sys.argv)
+def run(argv: list[str] | None = None) -> int:
+    args = list(sys.argv if argv is None else argv)
+    if "--version" in args[1:]:
+        print(f"vibe-code {_version()}")
+        return 0
+    app = QApplication.instance() or QApplication(args)
     window = MainWindow()
     window.show()
+    if "--smoke-test" in args[1:]:
+        # Used by packaging checks: construct the full UI, then exit cleanly.
+        QTimer.singleShot(0, app.quit)
     return app.exec()
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("vibe-code-for-desktop-app")
+    except Exception:
+        return "unknown"

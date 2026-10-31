@@ -28,3 +28,47 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
       - name: Run tests
         run: python -m pytest -q -rs
+
+  package:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build wheel and sdist
+        run: python -m pip install --upgrade pip build && python -m build
+      - name: Clean install into a fresh venv and smoke test
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          if [ "$RUNNER_OS" = "Windows" ]; then PY="$RUNNER_TEMP/clean/Scripts/python.exe"; else PY="$RUNNER_TEMP/clean/bin/python"; fi
+          "$PY" -m pip install dist/*.whl
+          cp scripts/smoke_install.py "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP" && "$PY" smoke_install.py
+          "$PY" -m pip install --force-reinstall --no-deps "$GITHUB_WORKSPACE"/dist/*.whl && "$PY" smoke_install.py
+      - name: Build standalone desktop bundle
+        run: python -m pip install -e ".[package]" && python packaging/build_desktop.py
+      - name: Smoke test standalone bundle
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then dist/vibe-code/vibe-code.exe --smoke-test; else dist/vibe-code/vibe-code --smoke-test; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibe-code-${{ runner.os }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error

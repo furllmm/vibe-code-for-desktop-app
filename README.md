@@ -8,51 +8,85 @@ Describe a desktop app. Let the agent inspect the project, write code, run it, d
 
 The architecture is **context-engineering-first**: retrieve only the project knowledge needed for each task instead of sending the whole repository on every turn.
 
-## Phase 1 foundation
+## Features
 
-- PySide6 desktop shell
-- Workspace model
-- Context engineering core
-- Provider-neutral AI interface
-- Workspace-scoped filesystem tool
-- SQLite-ready storage boundary
-- Clean package boundaries for future agent/runtime work
+- **Editor & workspace** — project tree, tabbed editor with highlighting, find/replace, workspace search with reviewed multi-file replace.
+- **AI agent** — bounded tool-using agent loop, Enhance (prompt → reviewed brief), project chat, selection edit/chat/insights, project-wide edits, AI debugger and reviewed repair.
+- **Project index** — Python/Rust/C/C++/Go symbols, imports, dependency graph, reverse dependents, git change history; incremental cache; **Index** tab.
+- **Context engine** — relevance + graph + history ranking under a token budget, `.vibeignore`, project rules, secret redaction; **Context** tab.
+- **Continue / Full Do** — autonomous multi-task runs with budgets, validation, retries, loop detection, checkpoints and resume; **Runs** tab with *Run in Background*.
+- **Changes** — every AI write is snapshotted, diffable and reversible.
+- **Preview & validation** — Python/PySide6, CMake, Rust, Go, Java, .NET, Node/Electron.
+- **Packaging** — package the *user's* project (PyInstaller, CPack, AppImage…) and ship the IDE itself as Linux/Windows bundles.
 
-## Architecture
+## Installation
 
+Requires Python 3.11+ (Linux and Windows are tested in CI; macOS is untested).
+
+```bash
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+vibe-code                            # or: python -m vibe_code
+pytest                               # QT_QPA_PLATFORM=offscreen on headless machines
 ```
-vibe_code/
-  app.py
-  context/      project discovery, scoring, context packs
-  providers/    AI provider interfaces
-  tools/        explicit workspace-scoped tools
-  storage/      persistent local state
-  workspace/    project lifecycle
+
+On minimal Linux systems Qt needs `libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3`.
+
+Command-line flags: `--version`, `--smoke-test` (build the full UI and exit; used by packaging checks).
+
+### Standalone bundles
+
+CI (`package` job) builds a wheel, installs it into a clean virtualenv, reinstalls it over
+itself (upgrade check) and smoke-tests it, then builds PyInstaller bundles
+(`vibe-code-linux.tar.gz`, `vibe-code-windows.zip`) and smoke-tests the frozen app. Locally:
+
+```bash
+pip install -e ".[package]"          # PyInstaller is opt-in, not a runtime dependency
+python packaging/build_desktop.py    # -> dist/vibe-code/ and an archive
+dist/vibe-code/vibe-code --smoke-test
 ```
+
+## Usage
+
+1. Configure a provider (see below and [docs/PROVIDERS.md](docs/PROVIDERS.md)); press **Test Provider**.
+2. **Open Workspace**. The Index and Context tabs fill in automatically.
+3. Describe a change and press **Run Agent** (or **Enhance** first). Review results in **Changes**.
+4. For larger goals open **Runs**, pick **Full Do** (analyse and complete the project) or
+   **Continue** (finish the saved task), optionally tick the validation/trust box, and press
+   **Run in Background**. Cancel or resume at any time; interrupted runs are offered for resume
+   when the workspace is reopened.
+
+## Configuration and state
+
+| Where | What |
+|-------|------|
+| `VIBE_CODE_*` environment variables | Provider, timeout, preview command ([docs/PROVIDERS.md](docs/PROVIDERS.md)) |
+| `.vibe-code/context.json` | `{"token_budget": 12000, "exclude": ["data/**"], "include_rules": true}` |
+| `.vibeignore` | Extra glob exclusions (one per line, `fnmatch` syntax) from AI context |
+| `.vibe-code/rules.md` or `AGENTS.md` | Project rules injected into every request |
+| `.vibe-code/skills/<name>/SKILL.md` | Workspace skills |
+| `.vibe-code/index/`, `runs/`, `changes/`, `task_state.json` | Index cache, run checkpoints, change snapshots, Continue checkpoint |
+
+All state is per-workspace, git-ignored, written atomically, and kept across reinstalls and
+upgrades (unknown fields from other versions are ignored; stale caches are rebuilt). The app
+writes nothing to your user profile and never stores the API key.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security boundaries](docs/SECURITY.md)
+- [Provider configuration](docs/PROVIDERS.md)
+- [Changelog](CHANGELOG.md) · [Roadmap / known gaps](TODO.md)
 
 ## Principles
 
 1. Context is assembled on demand.
 2. Agent capabilities have explicit boundaries.
 3. File changes remain auditable and diffable.
-4. Long-running commands will be cancellable.
+4. Long-running work is cancellable and resumable.
 5. Provider-specific code stays behind interfaces.
-6. Local-first is a design goal.
-
-## Development
-
-Python 3.11+.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-python -m vibe_code
-pytest
-```
-
-Status: early foundation / active development.
-
+6. Local-first.
 
 ## Agent runner
 
