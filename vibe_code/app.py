@@ -38,6 +38,9 @@ from vibe_code.agent.task_state import TaskState, TaskStateStore
 from vibe_code.agent.orchestrator import AgentOrchestrator, OrchestrationResult, PreviewFailure, RepairResult
 from vibe_code.agent.recovery import RecoveryAction, RecoveryDecision
 from vibe_code.agent.worker import AgentWorker
+from vibe_code.agent.autonomy import AutonomousRunner, guard_registry
+from vibe_code.agent.background import BackgroundTaskManager
+from vibe_code.agent.runs_panel import RunsPanel
 from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.index.panel import IndexPanel
@@ -197,6 +200,10 @@ class MainWindow(QMainWindow):
         self.right_tabs = QTabWidget()
         self.right_tabs.addTab(self.context_panel, "Context")
         self.right_tabs.addTab(self.index_panel, "Index")
+        self.background = BackgroundTaskManager()
+        self.runs_panel = RunsPanel(self.background, self._build_autonomous_runner)
+        self.runs_panel.default_goal = self._saved_task_goal
+        self.right_tabs.addTab(self.runs_panel, "Runs")
         splitter.addWidget(self.right_tabs)
         splitter.setSizes([260, 620, 400])
         self.setCentralWidget(splitter)
@@ -1240,12 +1247,52 @@ class MainWindow(QMainWindow):
         if self.editor_panel is not None and not self.editor_panel.confirm_close_all():
             event.ignore()
             return
+        self.background.cancel_all()
         self.stop_preview()
         super().closeEvent(event)
 
     def load_workspace(self, root: Path) -> None:
         self.project_tree.clear()
         self._add_tree(root, self.project_tree.invisibleRootItem())
+        self.runs_panel.set_workspace(root.expanduser().resolve())
+
+    def _saved_task_goal(self) -> str:
+        store = self._task_store()
+        try:
+            state = store.load() if store is not None else None
+        except RuntimeError:
+            return ""
+        return state.original_prompt if state is not None else ""
+
+    def _build_autonomous_runner(self, validate: bool, cancel_event, on_progress) -> AutonomousRunner:
+        if self.workspace is None:
+            raise ValueError("Open a workspace first")
+        root = self.workspace.root
+        provider = self._build_provider()
+        provider.cancel_event = cancel_event
+        filesystem = WorkspaceFS(root)
+        changes = ChangeManager(filesystem)
+        registry = ToolRegistry((
+            ReadFileTool(filesystem),
+            WriteFileTool(filesystem, changes),
+            GetChangesTool(changes),
+            RollbackChangesTool(changes),
+        ))
+        # Background runs cannot prompt the user, so destructive tools are always denied.
+        registry = guard_registry(registry, lambda _name, _args: False)
+        validator = None
+        if validate:
+            preview = self._build_preview_engine()
+            if preview is not None:
+                validator = ProjectValidator(root, preview).run
+        return AutonomousRunner(
+            AgentLoop(provider, registry),
+            ContextService(),
+            root,
+            validate=validator,
+            cancel_event=cancel_event,
+            on_progress=on_progress,
+        )
 
     def _add_tree(self, path: Path, parent: QTreeWidgetItem) -> None:
         if path != path.anchor and path.name.startswith("."):
