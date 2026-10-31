@@ -1,0 +1,15 @@
+id: python-pyside6
+version: 1
+description: Minimal Python and PySide6 desktop application
+entrypoint: src/main.py
+requires:
+  - python>=3.11
+  - PySide6>=6.7,<7
+includes:
+  rules:
+    - desktop-ui
+  skills:
+    - desktop-ui
+safety:
+  preview_changes: true
+  require_approval_for_overwrite: true

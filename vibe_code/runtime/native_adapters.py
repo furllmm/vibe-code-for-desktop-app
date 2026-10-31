@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 from typing import Sequence
@@ -160,3 +161,53 @@ class JavaAdapter:
                 "configure a runnable/fat JAR before previewing."
             )
         return ("java", "-jar", str(jars[0]))
+
+
+class CppAdapter:
+    """Fallback preview for a self-contained C/C++ project without CMake.
+
+    Detects a conventional top-level ``main.c``/``main.cpp``/``main.cc``/``main.cxx``
+    and compiles only that file into ``.vibe-code/build/preview``.
+    """
+
+    sources = ("main.cpp", "main.cc", "main.cxx", "main.c")
+    output_relative = Path(".vibe-code") / "build" / ("preview.exe" if os.name == "nt" else "preview")
+
+    def _source(self, workspace: Path) -> Path | None:
+        for name in self.sources:
+            path = workspace / name
+            if path.is_file() and not path.is_symlink():
+                return path
+        return None
+
+    def detect(self, workspace: Path) -> bool:
+        return not (workspace / "CMakeLists.txt").exists() and self._source(workspace) is not None
+
+    def build(self, workspace: Path) -> None:
+        source = self._source(workspace)
+        if source is None:
+            raise RuntimeError("No conventional C/C++ entrypoint found")
+        output = workspace / self.output_relative
+        output.parent.mkdir(parents=True, exist_ok=True)
+        compiler = "cc" if source.suffix == ".c" else "c++"
+        try:
+            result = subprocess.run(
+                [compiler, str(source), "-O0", "-g", "-o", str(output)],
+                cwd=workspace, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", timeout=300, check=False, shell=False,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Build tool not found: {compiler}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("C/C++ build timed out after 300s") from exc
+        if result.returncode:
+            raise RuntimeError(
+                f"C/C++ build failed (exit {result.returncode}).\n{result.stdout[-8000:]}"
+            )
+
+    def command(self, workspace: Path) -> Sequence[str]:
+        executable = workspace / self.output_relative
+        if not executable.is_file():
+            raise RuntimeError("C/C++ preview executable is missing; build the project first")
+        return (str(executable),)

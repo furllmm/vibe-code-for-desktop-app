@@ -4,7 +4,6 @@ import difflib
 import hashlib
 import html
 import os
-import shlex
 import sys
 from pathlib import Path
 
@@ -17,6 +16,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QLabel,
+    QHBoxLayout,
+    QWidget,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -31,16 +32,20 @@ from PySide6.QtWidgets import (
 )
 
 from vibe_code.agent.service import AgentLoop, AgentRequest, AgentRunResult
+from vibe_code.agent.enhance import EnhancementService
+from vibe_code.agent.task_state import TaskState, TaskStateStore
 from vibe_code.agent.orchestrator import AgentOrchestrator, OrchestrationResult, PreviewFailure, RepairResult
 from vibe_code.agent.recovery import RecoveryAction, RecoveryDecision
 from vibe_code.agent.worker import AgentWorker
-from vibe_code.context.models import ContextRequest
+from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.context.service import ContextService
 from vibe_code.chat import ProjectChatSession
 from vibe_code.chat.dialog import ProjectChatDialog
 from vibe_code.editor.project_edit import ProjectEditSession
 from vibe_code.editor.project_edit_dialog import ProjectEditDialog
+from vibe_code.skills.service import SkillService
+from vibe_code.templates.service import TemplateService, TemplateError
 from vibe_code.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -59,21 +64,7 @@ from vibe_code.editor.selection_analysis import analyze_selection
 from vibe_code.editor.selection_chat import SelectionChatSession
 from vibe_code.editor.selection_chat_dialog import SelectionChatDialog
 from vibe_code.workspace import Workspace
-from vibe_code.runtime import (
-    AdapterRegistry,
-    CMakeAdapter,
-    JavaAdapter,
-    DotNetAdapter,
-    ElectronAdapter,
-    GenericPreviewAdapter,
-    GoAdapter,
-    NodeScriptAdapter,
-    PreviewConfig,
-    PreviewEngine,
-    PythonPySide6Adapter,
-    RustCargoAdapter,
-    ProjectValidator,
-)
+from vibe_code.runtime import PreviewEngine, ProjectValidator, detect_preview_adapter
 
 
 class MainWindow(QMainWindow):
@@ -83,6 +74,10 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.workspace: Workspace | None = None
         self.context_service = ContextService()
+        self.skill_service = SkillService()
+        self.template_service = TemplateService()
+        self._resume_requested = False
+        self._task_original_prompt = ""
         self._thread: QThread | None = None
         self._worker: AgentWorker | None = None
         self._preview: PreviewEngine | None = None
@@ -126,6 +121,9 @@ class MainWindow(QMainWindow):
         workspace_search_action.setShortcut("Ctrl+Shift+F")
         workspace_search_action.triggered.connect(self.show_workspace_search)
         toolbar.addAction(workspace_search_action)
+        templates_action = QAction("Templates…", self)
+        templates_action.triggered.connect(self.open_template_picker)
+        toolbar.addAction(templates_action)
         preview_start = QAction("Run Preview", self)
         preview_start.triggered.connect(self.run_preview)
         preview_stop = QAction("Stop Preview", self)
@@ -142,7 +140,7 @@ class MainWindow(QMainWindow):
         self.project_tree.itemDoubleClicked.connect(self._open_tree_item)
 
         chat_splitter = QSplitter()
-        chat_splitter.setOrientation(2)
+        chat_splitter.setOrientation(Qt.Orientation.Vertical)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         self.output.setPlaceholderText("Agent output will appear here…")
@@ -152,10 +150,27 @@ class MainWindow(QMainWindow):
         )
         self.run_button = QPushButton("Run Agent")
         self.run_button.clicked.connect(self.run_agent)
+        self.enhance_button = QPushButton("Enhance")
+        self.enhance_button.setToolTip(
+            "Turn your rough request into a detailed, project-aware brief for review."
+        )
+        self.enhance_button.clicked.connect(self.enhance_prompt)
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setToolTip(
+            "Resume the last saved task after inspecting current files and changes."
+        )
+        self.continue_button.setEnabled(False)
+        self.continue_button.clicked.connect(self.continue_task)
+        action_row = QWidget()
+        action_layout = QHBoxLayout(action_row)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.addWidget(self.enhance_button)
+        action_layout.addWidget(self.continue_button)
+        action_layout.addWidget(self.run_button)
 
         chat_splitter.addWidget(self.output)
         chat_splitter.addWidget(self.prompt)
-        chat_splitter.addWidget(self.run_button)
+        chat_splitter.addWidget(action_row)
         chat_splitter.setSizes([480, 180, 48])
 
         self.center_tabs = QTabWidget()
@@ -191,6 +206,7 @@ class MainWindow(QMainWindow):
         self.workspace = new_workspace
         self._set_editor_workspace(new_workspace)
         self.load_workspace(self.workspace.root)
+        self._refresh_continue_state()
         self.refresh_context()
         self.statusBar().showMessage(f"Workspace: {self.workspace.root}")
 
@@ -365,17 +381,156 @@ class MainWindow(QMainWindow):
         dialog = PackagingDialog(self.workspace.root, self)
         dialog.exec()
 
+    def open_template_picker(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace before choosing a template")
+            return
+        try:
+            templates = self.template_service.list_templates()
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Templates unavailable", str(exc))
+            return
+        if not templates:
+            QMessageBox.information(self, "Templates", "No valid templates were found.")
+            return
+
+        choices = [f"{item['name']} — {item['description']}" for item in templates]
+        selected, accepted = QInputDialog.getItem(
+            self, "Template picker", "Template:", choices, 0, False
+        )
+        if not accepted:
+            return
+        template = templates[choices.index(selected)]
+        try:
+            plan = self.template_service.plan(template["id"], self.workspace.root)
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Template preview failed", str(exc))
+            return
+
+        existing = [item.path for item in plan.files if item.exists]
+        new_files = [item.path for item in plan.files if not item.exists]
+        content_preview = "\n\n".join(
+            f"{item.path}:\n{item.content[:500]}"
+            + ("\n… (preview truncated)" if len(item.content) > 500 else "")
+            for item in plan.files
+        )
+        preview = (
+            f"Template: {template['name']}\n\n"
+            f"New files ({len(new_files)}):\n"
+            + ("\n".join(f"  + {path}" for path in new_files) or "  (none)")
+            + "\n\nExisting files that will be skipped by default "
+            f"({len(existing)}):\n"
+            + ("\n".join(f"  • {path}" for path in existing) or "  (none)")
+            + "\n\nContent preview (up to 500 characters per file):\n"
+            + content_preview[:5000]
+            + "\n\nNo files are changed until you approve the next step."
+        )
+        preview_box = QMessageBox(self)
+        preview_box.setWindowTitle("Review template changes")
+        preview_box.setIcon(QMessageBox.Icon.Information)
+        preview_box.setText("Template application preview")
+        preview_box.setInformativeText(preview)
+        apply_button = preview_box.addButton(
+            "Apply New Files", QMessageBox.ButtonRole.AcceptRole
+        )
+        preview_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        preview_box.exec()
+        if preview_box.clickedButton() is not apply_button:
+            return
+
+        try:
+            result = self.template_service.apply(
+                template["id"], self.workspace.root, overwrite=False
+            )
+        except (OSError, ValueError, TemplateError) as exc:
+            QMessageBox.warning(self, "Template application failed", str(exc))
+            return
+        self.load_workspace(self.workspace.root)
+        self.refresh_context()
+        created = "\n".join(result["created"]) or "(no new files created)"
+        skipped = "\n".join(result["skipped"])
+        message = f"Created files:\n{created}"
+        if skipped:
+            message += f"\n\nSkipped existing files (not overwritten):\n{skipped}"
+        QMessageBox.information(self, "Template applied", message)
+        self.statusBar().showMessage(
+            f"Template applied: {len(result['created'])} created, "
+            f"{len(result['skipped'])} skipped"
+        )
+
     def refresh_context(self) -> None:
         if self.workspace is None:
             self.statusBar().showMessage("Open a workspace first")
             return
 
         prompt = self.prompt.toPlainText().strip() or "project structure and metadata"
+        pack = self._build_context(prompt)
+        self.context_panel.show_pack(pack)
+        self.statusBar().showMessage(f"Context: {pack.summary()}")
+
+
+    def _build_context(self, prompt: str) -> ContextPack:
+        if self.workspace is None:
+            raise ValueError("Open a workspace first")
         pack = self.context_service.build(
             ContextRequest(prompt, self.workspace.root, token_budget=12000)
         )
-        self.context_panel.show_pack(pack)
-        self.statusBar().showMessage(f"Context: {pack.summary()}")
+        skills = self.skill_service.load_for_prompt(self.workspace.root, prompt)
+        if not skills:
+            return pack
+        skill_items = tuple(
+            ContextItem(
+                path=skill.path,
+                kind="metadata",
+                score=float(skill.score),
+                reason=f"relevant skill: {skill.name}",
+                content=skill.content,
+            )
+            for skill in skills
+        )
+        skill_tokens = sum(len(item.content or "") for item in skill_items) // 4
+        return ContextPack(
+            items=pack.items + skill_items,
+            estimated_tokens=pack.estimated_tokens + skill_tokens,
+        )
+
+    def _task_store(self) -> TaskStateStore | None:
+        return TaskStateStore(self.workspace.root) if self.workspace is not None else None
+
+    def _refresh_continue_state(self) -> None:
+        store = self._task_store()
+        if store is None:
+            self.continue_button.setEnabled(False)
+            return
+        try:
+            self.continue_button.setEnabled(store.load() is not None)
+        except RuntimeError as exc:
+            self.continue_button.setEnabled(False)
+            self.statusBar().showMessage(str(exc))
+
+    def continue_task(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another agent task is already running")
+            return
+        store = self._task_store()
+        if store is None:
+            return
+        try:
+            state = store.load()
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Continue unavailable", str(exc))
+            return
+        if state is None:
+            self.statusBar().showMessage("No saved task is available to continue")
+            self._refresh_continue_state()
+            return
+        self._resume_requested = True
+        self._task_original_prompt = state.original_prompt
+        self.prompt.setPlainText(state.continuation_prompt())
+        self.statusBar().showMessage("Resume brief loaded. Review it, then press Run Agent.")
 
     def run_preview(self) -> None:
         if self.workspace is None:
@@ -436,6 +591,69 @@ class MainWindow(QMainWindow):
             )
             self._preview = None
 
+
+    def enhance_prompt(self) -> None:
+        if self.workspace is None:
+            self.statusBar().showMessage("Open a workspace first")
+            return
+        prompt = self.prompt.toPlainText().strip()
+        if not prompt:
+            self.statusBar().showMessage("Describe your idea before enhancing it")
+            return
+        if self._thread is not None:
+            self.statusBar().showMessage("Another agent task is already running")
+            return
+        try:
+            pack = self._build_context(prompt)
+            self.context_panel.show_pack(pack)
+            provider = self._build_provider()
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.statusBar().showMessage(f"Enhance setup error: {exc}")
+            return
+
+        self.output.append(f"<b>Enhance request:</b> {html.escape(prompt)}")
+        self.enhance_button.setEnabled(False)
+        self.run_button.setEnabled(False)
+        self.statusBar().showMessage("Enhancing request using project context…")
+
+        thread = QThread(self)
+        worker = AgentWorker(
+            AgentLoop(provider, ToolRegistry()),
+            AgentRequest(prompt, pack),
+            work=lambda: EnhancementService.enhance(provider, prompt, pack),
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._enhance_finished)
+        worker.failed.connect(self._enhance_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._agent_thread_finished)
+        self._thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _enhance_failed(self, message: str) -> None:
+        # Enhancing a prompt is not a coding task; do not overwrite its checkpoint.
+        self.output.append(f"<b>Enhance error:</b> {html.escape(message)}")
+        self.statusBar().showMessage(f"Enhance error: {message}")
+
+    def _enhance_finished(self, result: object) -> None:
+        if not isinstance(result, str) or not result.strip():
+            self.output.append("<b>Enhance:</b> The provider returned an empty brief.")
+            self.statusBar().showMessage("Enhance returned no usable text.")
+            return
+        enhanced = result.strip()
+        self.prompt.setPlainText(enhanced)
+        self.output.append(
+            "<b>Enhanced brief (review before running):</b><br>"
+            + html.escape(enhanced).replace("\n", "<br>")
+        )
+        self.statusBar().showMessage(
+            "Request enhanced. Review or edit it, then press Run Agent."
+        )
+
     def run_agent(self) -> None:
         if self.workspace is None:
             self.statusBar().showMessage("Open a workspace first")
@@ -449,12 +667,14 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Agent is already running")
             return
 
+        self._task_original_prompt = (
+            self._task_original_prompt if self._resume_requested and self._task_original_prompt
+            else prompt
+        )
         try:
             if self._preview is not None:
                 self.stop_preview()
-            pack = self.context_service.build(
-                ContextRequest(prompt, self.workspace.root, token_budget=12000)
-            )
+            pack = self._build_context(prompt)
             self.context_panel.show_pack(pack)
             provider = self._build_provider()
             filesystem = WorkspaceFS(self.workspace.root)
@@ -472,9 +692,20 @@ class MainWindow(QMainWindow):
                 RollbackChangesTool(changes),
             ]
             preview = self._build_preview_engine()
+            if preview is not None:
+                tools.extend(
+                    [
+                        RunPreviewTool(preview),
+                        GetPreviewLogsTool(preview),
+                        StopPreviewTool(preview),
+                    ]
+                )
             registry = ToolRegistry(tuple(tools))
             loop = AgentLoop(provider, registry)
             request = AgentRequest(prompt, pack)
+            store = self._task_store()
+            if store is not None:
+                store.save(TaskState(self._task_original_prompt, "running"))
             self._orchestrator = None
             if preview is not None:
                 self._preview = preview
@@ -492,6 +723,9 @@ class MainWindow(QMainWindow):
 
         self.output.append(f"<b>You:</b> {html.escape(prompt)}")
         self.run_button.setEnabled(False)
+        self.enhance_button.setEnabled(False)
+        self.continue_button.setEnabled(False)
+        self._resume_requested = False
         self.statusBar().showMessage("Agent is working…")
 
         thread = QThread(self)
@@ -752,28 +986,11 @@ class MainWindow(QMainWindow):
     def _build_preview_engine(self) -> PreviewEngine | None:
         if self.workspace is None:
             return None
-        command_text = os.environ.get("VIBE_CODE_PREVIEW_COMMAND", "").strip()
-        if command_text:
-            command = tuple(shlex.split(command_text))
-            if not command:
-                raise ValueError("VIBE_CODE_PREVIEW_COMMAND must not be empty")
-            adapter = GenericPreviewAdapter(PreviewConfig(command))
-        else:
-            entrypoint = os.environ.get("VIBE_CODE_PYTHON_ENTRYPOINT") or None
-            registry = AdapterRegistry((
-                PythonPySide6Adapter(entrypoint),
-                CMakeAdapter(),
-                JavaAdapter(),
-                RustCargoAdapter(),
-                GoAdapter(),
-                DotNetAdapter(),
-                ElectronAdapter(),
-                NodeScriptAdapter(),
-            ))
-            adapter = registry.detect(self.workspace.root)
-            if adapter is None:
-                return None
+        adapter = detect_preview_adapter(self.workspace.root)
+        if adapter is None:
+            return None
         return PreviewEngine(self.workspace.root, adapter)
+
     def _build_provider(self) -> OpenAICompatibleProvider:
         base_url = os.environ.get("VIBE_CODE_BASE_URL", "").strip()
         model = os.environ.get("VIBE_CODE_MODEL", "").strip()
@@ -795,6 +1012,7 @@ class MainWindow(QMainWindow):
         if isinstance(result, OrchestrationResult):
             agent = result.agent
             self.output.append(f"<b>Agent:</b> {html.escape(agent.content)}")
+            self._save_task_state("failed" if result.failure else ("interrupted" if agent.stopped_by_limit else "completed"), agent.content)
             self._last_failure = result.failure
             if self.change_panel is not None:
                 self.change_panel.refresh()
@@ -814,6 +1032,7 @@ class MainWindow(QMainWindow):
             return
 
         self.output.append(f"<b>Agent:</b> {html.escape(result.content)}")
+        self._save_task_state("interrupted" if result.stopped_by_limit else "completed", result.content)
         if self.change_panel is not None:
             self.change_panel.refresh()
         if result.executions:
@@ -868,9 +1087,7 @@ class MainWindow(QMainWindow):
         if self._orchestrator is None or self._thread is not None:
             return
         loop = self._orchestrator.agent
-        request = AgentRequest("repair preview failure", self.context_service.build(
-            ContextRequest("repair preview failure", self.workspace.root, token_budget=12000)
-        ))
+        request = AgentRequest("repair preview failure", self._build_context("repair preview failure"))
         self.output.append("<b>Recovery:</b> fixing preview crash…")
         self.run_button.setEnabled(False)
         thread = QThread(self)
@@ -949,7 +1166,18 @@ class MainWindow(QMainWindow):
         if self.change_panel is not None:
             self.change_panel.refresh()
 
+    def _save_task_state(self, status: str, result: str) -> None:
+        store = self._task_store()
+        if store is None or not self._task_original_prompt:
+            return
+        try:
+            store.save(TaskState(self._task_original_prompt, status, result))
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.statusBar().showMessage(f"Could not save Continue checkpoint: {exc}")
+        self._refresh_continue_state()
+
     def _agent_failed(self, message: str) -> None:
+        self._save_task_state("interrupted", message)
         self.output.append(f"<b>Agent error:</b> {html.escape(message)}")
         self.statusBar().showMessage(f"Agent error: {message}")
 
@@ -964,6 +1192,8 @@ class MainWindow(QMainWindow):
             self._pending_selection_analysis = None
         if self._pending_selection_edit is not None:
             self._pending_selection_edit = None
+        self.enhance_button.setEnabled(True)
+        self._refresh_continue_state()
         failure = self._pending_recovery_failure
         self._pending_recovery_failure = None
         if failure is not None:

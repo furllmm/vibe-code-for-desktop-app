@@ -220,3 +220,22 @@ This is a startup smoke check, not a full GUI interaction or long-duration healt
 After a failed validation, **Debug with AI** extracts source locations from common Python traceback, compiler, Rust, Java and .NET diagnostic formats. A location is included only when it resolves to an existing, eligible text source file inside the current workspace; symlinked, outside, missing, sensitive, unsupported and oversized files are excluded. A small surrounding excerpt is supplied with the bounded validation output to help the model correlate the failure with the code.
 
 Common inline credential patterns are redacted before diagnostics are sent to the configured AI provider. This is best-effort redaction, not a guarantee that logs contain no secrets; inspect provider privacy settings and avoid sharing sensitive workspaces. Logs and source excerpts are untrusted data. The debugger only prepares a reviewed project-edit proposal: it does not apply changes or execute commands. Review the diff and explicitly choose **Apply & Validate** to accept and re-run validation.
+
+## Request enhancement
+
+The **Enhance** action uses the configured AI provider and relevant project context to expand a rough idea into a structured implementation brief. It preserves explicit user intent, distinguishes suggestions from approved requirements, and returns the brief to the prompt editor for review. It does not start coding; the user reviews or edits the result and explicitly presses **Run Agent**.
+
+Enhancement is deliberately a separate, tool-free provider request. It cannot call filesystem, terminal, preview, or other agent tools.
+
+
+## Continue checkpoints
+
+The **Continue** button restores the last saved task brief from `.vibe-code/task_state.json`. It includes the original request and the last agent report, then asks the agent to inspect the current workspace/change history before deciding what remains. This is a task checkpoint, not a serialized provider conversation; the agent reconstructs context from current files rather than replaying stale tool calls.
+
+## Skills
+
+Skills are Markdown `SKILL.md` files. Built-in skills cover desktop UI quality, debugging, testing, security, and safe refactoring. Workspace-specific skills can be added under `.vibe-code/skills/<skill-name>/SKILL.md`. The skill loader reads candidate metadata and only injects a small number of relevant skills into the context.
+
+## Coding templates
+
+Use **Templates…** in the workspace toolbar to preview and apply the built-in Python/PySide6 starter. The picker lists target files and identifies collisions before applying anything. Applying is a separate confirmation step; existing files are skipped by default and are never overwritten unless the caller explicitly opts in. Template paths are validated to prevent traversal and symlink-based writes. The packaged built-in template is available in source checkouts and installed builds.

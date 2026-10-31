@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from vibe_code.changes import ChangeManager, ChangeSet
-from vibe_code.runtime.validation import ProjectValidator, ValidationResult
+from vibe_code.runtime.validation import ProjectValidator, ValidationResult, ValidationStep
 from vibe_code.runtime.diagnostics import parse_diagnostics, redact_diagnostics
 from .project_edit import ProjectEditProposal, ProjectEditSession
 
