@@ -4,11 +4,13 @@ import re
 import subprocess
 from pathlib import Path
 
-from ..index import ProjectIndexer
-from ..index.indexer import FileIndex
+from ..index import ProjectIndex, ProjectIndexer
+from ..index.indexer import IGNORED_DIRS, FileIndex
 from .models import ContextItem, ContextPack, ContextRequest
 
-_IGNORE_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"}
+_IGNORE_DIRS = set(IGNORED_DIRS)
+_RELATED_BOOST = 6.0
+_RELATED_SEEDS = 5
 _MAX_CONTEXT_FILES = 20_000
 _MAX_CONTEXT_SCAN_BYTES = 256 * 1024 * 1024
 _SENSITIVE_NAMES = {
@@ -30,6 +32,7 @@ class ContextService:
 
     def __init__(self, indexer: ProjectIndexer | None = None) -> None:
         self._indexer = indexer or ProjectIndexer()
+        self.last_index: ProjectIndex | None = None
 
     def build(self, request: ContextRequest) -> ContextPack:
         if request.token_budget <= 0:
@@ -37,15 +40,18 @@ class ContextService:
 
         root = request.workspace.expanduser().resolve()
         focus_paths = {p.expanduser().resolve() for p in request.focus_paths}
-        index = {
-            item.path.resolve(): item
-            for item in self._indexer.build(root)
+        project_index = self._build_index(root)
+        self.last_index = project_index
+        index = {item.path.resolve(): item for item in project_index.files.values()} if project_index else {
+            item.path.resolve(): item for item in self._indexer.build(root)
         }
         recent_paths = self._recent_paths(root)
         scored = [
             self._score_metadata(path, request.prompt, focus_paths, index.get(path.resolve()), recent_paths)
             for path in self._discover(root)
         ]
+        if project_index is not None:
+            scored = self._apply_graph_signals(root, scored, project_index)
         scored.sort(key=lambda item: (-item.score, str(item.path)))
 
         budget_chars = request.token_budget * 4
@@ -59,7 +65,50 @@ class ContextService:
             selected.append(item)
             used += size
 
-        return ContextPack(tuple(selected), used // 4)
+        summary = project_index.stats.summary() if project_index is not None else ""
+        return ContextPack(tuple(selected), used // 4, summary)
+
+    def _build_index(self, root: Path) -> ProjectIndex | None:
+        build_index = getattr(self._indexer, "build_index", None)
+        if build_index is None:
+            return None
+        try:
+            return build_index(root)
+        except OSError:
+            return None
+
+    @staticmethod
+    def _apply_graph_signals(
+        root: Path, scored: list[ContextItem], project_index: ProjectIndex
+    ) -> list[ContextItem]:
+        def relative(path: Path) -> str:
+            return path.resolve().relative_to(root).as_posix()
+
+        ranked = sorted(scored, key=lambda item: -item.score)
+        seeds = [relative(item.path) for item in ranked[:_RELATED_SEEDS] if item.score >= 7]
+        boosts: dict[str, list[str]] = {}
+        for seed in seeds:
+            for target in project_index.dependencies.get(seed, ()):
+                boosts.setdefault(target, []).append(f"imported by {seed}")
+            for source in project_index.dependents.get(seed, ()):
+                boosts.setdefault(source, []).append(f"imports {seed}")
+        result: list[ContextItem] = []
+        for item in scored:
+            key = relative(item.path)
+            score = item.score
+            reasons = [] if item.reason == "baseline candidate" else [item.reason]
+            if key in boosts and key not in seeds:
+                score += _RELATED_BOOST
+                reasons.append(boosts[key][0])
+            changes = project_index.change_counts.get(key, 0)
+            if changes >= 3:
+                score += min(4.0, changes / 5)
+                reasons.append(f"changed in {changes} recent commits")
+            result.append(ContextItem(
+                item.path, item.kind, score, ", ".join(reasons) or "baseline candidate",
+                item.content, item.start_line, item.end_line,
+            ))
+        return result
 
     def _discover(self, root: Path) -> list[Path]:
         paths: list[Path] = []

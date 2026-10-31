@@ -41,5 +41,6 @@ def test_main_window_loads_workspace_without_errors(tmp_path):
         window._refresh_continue_state()
         window.refresh_context()
         assert window.project_tree.topLevelItemCount() >= 1
+        assert window.index_panel.tree.topLevelItemCount() == 1
     finally:
         _dispose(window)

@@ -39,6 +39,7 @@ from vibe_code.agent.recovery import RecoveryAction, RecoveryDecision
 from vibe_code.agent.worker import AgentWorker
 from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
 from vibe_code.context.panel import ContextPanel
+from vibe_code.index.panel import IndexPanel
 from vibe_code.context.service import ContextService
 from vibe_code.chat import ProjectChatSession
 from vibe_code.chat.dialog import ProjectChatDialog
@@ -181,12 +182,15 @@ class MainWindow(QMainWindow):
         self.center_tabs.addTab(self.editor_placeholder, "Editor")
 
         self.context_panel = ContextPanel()
+        self.index_panel = IndexPanel()
+        self.index_panel.open_requested.connect(self._open_indexed_location)
         self.change_panel: ChangePanel | None = None
 
         splitter.addWidget(self.project_tree)
         splitter.addWidget(self.center_tabs)
         self.right_tabs = QTabWidget()
         self.right_tabs.addTab(self.context_panel, "Context")
+        self.right_tabs.addTab(self.index_panel, "Index")
         splitter.addWidget(self.right_tabs)
         splitter.setSizes([260, 620, 400])
         self.setCentralWidget(splitter)
@@ -242,6 +246,19 @@ class MainWindow(QMainWindow):
             self.center_tabs.setCurrentWidget(self.editor_panel)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Cannot open file", str(exc))
+
+    def _open_indexed_location(self, path: Path, line: int) -> None:
+        if self.workspace is None:
+            return
+        if self.editor_panel is None:
+            self._set_editor_workspace(self.workspace)
+        try:
+            editor = self.editor_panel.open_file(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot open file", str(exc))
+            return
+        editor.go_to_line(line)
+        self.center_tabs.setCurrentWidget(self.editor_panel)
 
     def save_current_file(self) -> None:
         if self.editor_panel is not None:
@@ -466,6 +483,7 @@ class MainWindow(QMainWindow):
         prompt = self.prompt.toPlainText().strip() or "project structure and metadata"
         pack = self._build_context(prompt)
         self.context_panel.show_pack(pack)
+        self.index_panel.show_index(self.context_service.last_index)
         self.statusBar().showMessage(f"Context: {pack.summary()}")
 
 

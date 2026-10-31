@@ -1,3 +1,3 @@
-from .indexer import FileIndex, ProjectIndexer, Symbol
+from .indexer import FileIndex, IndexStats, ProjectIndex, ProjectIndexer, Symbol
 
-__all__ = ["FileIndex", "ProjectIndexer", "Symbol"]
+__all__ = ["FileIndex", "IndexStats", "ProjectIndex", "ProjectIndexer", "Symbol"]

@@ -36,6 +36,7 @@ class ContextRequest:
 class ContextPack:
     items: tuple[ContextItem, ...]
     estimated_tokens: int
+    index_summary: str = ""
 
     def as_text(self) -> str:
         sections: list[str] = []

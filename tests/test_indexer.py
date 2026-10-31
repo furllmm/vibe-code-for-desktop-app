@@ -20,7 +20,7 @@ def test_python_index_extracts_symbols_and_imports(tmp_path: Path) -> None:
     assert result[0].language == "python"
     assert [(s.name, s.kind) for s in result[0].symbols] == [
         ("App", "class"),
-        ("run", "function"),
+        ("run", "method"),
     ]
     assert result[0].imports == ("collections", "pathlib")
 
