@@ -4,7 +4,7 @@ import shlex
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt
+from PySide6.QtCore import QThread
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (

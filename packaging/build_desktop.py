@@ -8,6 +8,7 @@ PyInstaller is NOT a runtime dependency; install it explicitly first:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -24,9 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-archive", action="store_true", help="skip the .tar.gz/.zip archive")
     args = parser.parse_args(argv)
 
-    try:
-        import PyInstaller  # noqa: F401
-    except ImportError:
+    if importlib.util.find_spec("PyInstaller") is None:
         print('PyInstaller is not installed. Run: python -m pip install -e ".[package]"', file=sys.stderr)
         return 2
 

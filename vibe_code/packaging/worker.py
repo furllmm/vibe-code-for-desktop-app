@@ -5,7 +5,7 @@ import threading
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .engine import PackagingEngine
-from .models import PackagingPlan, PackagingResult
+from .models import PackagingPlan
 
 
 class PackagingWorker(QObject):

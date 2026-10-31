@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from vibe_code.context.models import ContextRequest
 from vibe_code.context.service import ContextService

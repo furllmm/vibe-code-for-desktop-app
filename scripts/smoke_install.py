@@ -13,9 +13,12 @@ from pathlib import Path
 
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import importlib
+
     import vibe_code
-    from vibe_code.skills.service import SkillService  # noqa: F401  (import check)
-    from vibe_code.templates.service import TemplateService  # noqa: F401
+
+    for module in ("vibe_code.app", "vibe_code.skills.service", "vibe_code.templates.service"):
+        importlib.import_module(module)
 
     package = Path(vibe_code.__file__).resolve().parent
     if (package.parent / "pyproject.toml").exists():

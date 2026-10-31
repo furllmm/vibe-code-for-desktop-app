@@ -1102,7 +1102,7 @@ class MainWindow(QMainWindow):
         box.setInformativeText(preview)
         fix = box.addButton("Fix", QMessageBox.ButtonRole.AcceptRole)
         revert = box.addButton("Revert Changes", QMessageBox.ButtonRole.DestructiveRole)
-        keep = box.addButton("Keep Changes", QMessageBox.ButtonRole.RejectRole)
+        box.addButton("Keep Changes", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         clicked = box.clickedButton()
         if clicked is fix:

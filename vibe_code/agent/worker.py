@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from .service import AgentRequest, AgentRunResult, AgentLoop
+from .service import AgentRequest, AgentLoop
 from collections.abc import Callable
 
 

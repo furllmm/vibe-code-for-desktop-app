@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pytest
 
@@ -7,7 +6,7 @@ from vibe_code.chat.project_chat import (
     MAX_HISTORY_EXCHANGES,
     ProjectChatSession,
 )
-from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
+from vibe_code.context.models import ContextItem, ContextPack
 from vibe_code.providers.base import ProviderResponse
 from vibe_code.workspace import Workspace
 
