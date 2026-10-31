@@ -1,3 +1,275 @@
-# vibe-code-for-desktop-app
+# Vibe Code for Desktop Apps
 
-first on internet... coming soon... :D
+AI-first local desktop development environment for building, running, debugging, and packaging desktop applications from natural-language instructions.
+
+## Vision
+
+Describe a desktop app. Let the agent inspect the project, write code, run it, diagnose failures, and iterate.
+
+The architecture is **context-engineering-first**: retrieve only the project knowledge needed for each task instead of sending the whole repository on every turn.
+
+## Features
+
+- **Editor & workspace** — project tree, tabbed editor with highlighting, find/replace, workspace search with reviewed multi-file replace.
+- **AI agent** — bounded tool-using agent loop, Enhance (prompt → reviewed brief), project chat, selection edit/chat/insights, project-wide edits, AI debugger and reviewed repair.
+- **Project index** — Python/Rust/C/C++/Go symbols, imports, dependency graph, reverse dependents, git change history; incremental cache; **Index** tab.
+- **Context engine** — relevance + graph + history ranking under a token budget, `.vibeignore`, project rules, secret redaction; **Context** tab.
+- **Continue / Full Do** — autonomous multi-task runs with budgets, validation, retries, loop detection, checkpoints and resume; **Runs** tab with *Run in Background*.
+- **Changes** — every AI write is snapshotted, diffable and reversible.
+- **Preview & validation** — Python/PySide6, CMake, Rust, Go, Java, .NET, Node/Electron.
+- **Packaging** — package the *user's* project (PyInstaller, CPack, AppImage…) and ship the IDE itself as Linux/Windows bundles.
+
+## Installation
+
+Requires Python 3.11+ (Linux and Windows are tested in CI; macOS is untested).
+
+```bash
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+vibe-code                            # or: python -m vibe_code
+pytest                               # QT_QPA_PLATFORM=offscreen on headless machines
+```
+
+On minimal Linux systems Qt needs `libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3`.
+
+Command-line flags: `--version`, `--smoke-test` (build the full UI and exit; used by packaging checks).
+
+### Standalone bundles
+
+CI (`package` job) builds a wheel, installs it into a clean virtualenv, reinstalls it over
+itself (upgrade check) and smoke-tests it, then builds PyInstaller bundles
+(`vibe-code-linux.tar.gz`, `vibe-code-windows.zip`) and smoke-tests the frozen app. Locally:
+
+```bash
+pip install -e ".[package]"          # PyInstaller is opt-in, not a runtime dependency
+python packaging/build_desktop.py    # -> dist/vibe-code/ and an archive
+dist/vibe-code/vibe-code --smoke-test
+```
+
+## Usage
+
+1. Configure a provider (see below and [docs/PROVIDERS.md](docs/PROVIDERS.md)); press **Test Provider**.
+2. **Open Workspace**. The Index and Context tabs fill in automatically.
+3. Describe a change and press **Run Agent** (or **Enhance** first). Review results in **Changes**.
+4. For larger goals open **Runs**, pick **Full Do** (analyse and complete the project) or
+   **Continue** (finish the saved task), optionally tick the validation/trust box, and press
+   **Run in Background**. Cancel or resume at any time; interrupted runs are offered for resume
+   when the workspace is reopened.
+
+## Configuration and state
+
+| Where | What |
+|-------|------|
+| `VIBE_CODE_*` environment variables | Provider, timeout, preview command ([docs/PROVIDERS.md](docs/PROVIDERS.md)) |
+| `.vibe-code/context.json` | `{"token_budget": 12000, "exclude": ["data/**"], "include_rules": true}` |
+| `.vibeignore` | Extra glob exclusions (one per line, `fnmatch` syntax) from AI context |
+| `.vibe-code/rules.md` or `AGENTS.md` | Project rules injected into every request |
+| `.vibe-code/skills/<name>/SKILL.md` | Workspace skills |
+| `.vibe-code/index/`, `runs/`, `changes/`, `task_state.json` | Index cache, run checkpoints, change snapshots, Continue checkpoint |
+
+All state is per-workspace, git-ignored, written atomically, and kept across reinstalls and
+upgrades (unknown fields from other versions are ignored; stale caches are rebuilt). The app
+writes nothing to your user profile and never stores the API key.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security boundaries](docs/SECURITY.md)
+- [Provider configuration](docs/PROVIDERS.md)
+- [Changelog](CHANGELOG.md) · [Roadmap / known gaps](TODO.md)
+
+## Principles
+
+1. Context is assembled on demand.
+2. Agent capabilities have explicit boundaries.
+3. File changes remain auditable and diffable.
+4. Long-running work is cancellable and resumable.
+5. Provider-specific code stays behind interfaces.
+6. Local-first.
+
+## Agent runner
+
+The desktop UI can run a bounded coding-agent loop against any **Chat Completions-compatible** endpoint.
+
+Configure the provider through environment variables:
+
+```bash
+export VIBE_CODE_BASE_URL="http://localhost:8000/v1"
+export VIBE_CODE_MODEL="your-model"
+export VIBE_CODE_API_KEY="optional"
+export VIBE_CODE_TIMEOUT="60"
+python -m vibe_code
+```
+
+Then open a workspace, describe a change, and press **Run Agent**.
+
+The current agent tool allow-list contains:
+- `read_file`
+- `write_file`
+
+Both are restricted to the selected workspace. Agent execution runs outside the Qt GUI thread so a slow provider request does not block the interface.
+
+The current provider adapter targets the Chat Completions contract; it does not claim compatibility with the separate Responses API.
+
+
+## Desktop preview
+
+The first preview MVP uses an explicit command and does not invoke a shell:
+
+```bash
+export VIBE_CODE_PREVIEW_COMMAND="python -m your_app"
+python -m vibe_code
+```
+
+The IDE provides **Run Preview** and **Stop Preview**. Preview stdout/stderr is captured and displayed in the chat output, and non-zero exits are reported as crash/error exits.
+
+The preview layer is adapter-based so language-specific detection/build/run behavior can be added without changing the IDE UI. The current generic adapter intentionally performs no automatic build.
+
+
+### Python/PySide6 preview
+
+If VIBE_CODE_PREVIEW_COMMAND is not set, the desktop shell can automatically detect a Python/PySide6 workspace and infer an entrypoint from main.py, app.py, src/main.py, src/app.py, or project.scripts.preview in pyproject.toml. An explicit entrypoint can be supplied with VIBE_CODE_PYTHON_ENTRYPOINT. The adapter keeps the entrypoint inside the workspace and runs it with the current Python interpreter.
+
+
+### Agent preview tools
+
+When a preview adapter is available, the coding agent receives an explicit allow-list of `run_preview`, `get_preview_logs`, and `stop_preview`. The agent is instructed to validate meaningful changes with the preview and inspect diagnostics before finishing. Preview process commands remain owned by the configured adapter rather than being supplied by the model.
+
+
+### Multi-language preview adapters
+
+Automatic preview detection currently supports:
+- Python/PySide6 (runs the detected Python entrypoint)
+- C and C++ projects using CMake (builds in `.vibe-code/build/cmake`; resolves a single executable via the CMake file API)
+- Java Maven or Gradle projects (builds and launches one JAR with a `Main-Class` manifest)
+- Rust/Cargo (builds with `cargo build`, runs the debug binary)
+- Go (builds to `.vibe-code/bin/preview`, then runs it)
+- .NET single-target `.csproj` projects (builds and launches the output assembly)
+- Electron projects with a locally installed Electron runtime
+- Node projects declaring a `scripts.start` command
+
+Builds use argument arrays with `shell=False`, a bounded timeout, and captured diagnostics. The IDE does not run package installation or arbitrary packaging scripts automatically. Install project dependencies yourself before previewing. Set `VIBE_CODE_PREVIEW_COMMAND` to override automatic detection.
+
+The current .NET adapter intentionally supports one top-level project and one `TargetFramework`; multi-target and solution-level project selection remain future work.
+
+
+CMake preview requires CMake and a working C/C++ compiler toolchain. If the CMake project produces multiple executable targets, automatic preview stops and asks for a single preview target rather than guessing. Java preview requires the corresponding system build tool (`mvn` or `gradle`) and a runnable JAR with a `Main-Class` manifest; dependency/classpath assembly is not inferred. Java build scripts can execute project-defined code and may download dependencies, so use preview only with workspaces you trust. Local build products and IDE change state under `.vibe-code/` are ignored by Git.
+
+
+## Code editor (Phase 9)
+
+The workspace now includes an integrated tabbed text editor. Double-click a file in the project tree to open it; opening an already-open file focuses its existing tab. The editor includes lightweight syntax highlighting for Python, JavaScript/TypeScript, C/C++, Java, JSON, Markdown, and common configuration formats, a line-number gutter, active-line highlighting, Go to Line (Ctrl+G), Find in File (Ctrl+F), and Save (Ctrl+S). Workspace search (Ctrl+Shift+F) scans text files, opens matches at the correct line, and offers a reviewed unified-diff preview before applying multi-file replacements. Search skips common generated/dependency folders; replacement is limited to 100 files and rejects files changed after preview.
+
+File handling is deliberately conservative: only UTF-8 text files up to 2 MiB are editable, binary files and paths outside the workspace are rejected, and saves use a temporary file plus atomic replacement. The editor hashes the original file and refuses to overwrite an external modification; reopen the file to reconcile external changes. Closing a modified tab or switching workspaces asks whether to save, discard, or cancel.
+
+This is an initial editor foundation, not a full IDE editor yet. Language-server integration, diagnostics, and autocomplete remain future work.
+
+## Packaging workflow (Phase 8)
+
+The desktop toolbar now includes **Package Project**. The dialog lets you select a backend and format, set the application name, entrypoint/AppDir and output folder, review the exact command, and watch live build output. Packaging runs on a background Qt worker; cancellation requests terminate the packaging process tree (including child processes where the platform supports it).
+
+Before running, the user must explicitly trust the workspace and approve the displayed command. Build configuration and project hooks can execute code. Commands use argument arrays with `shell=False`; package output is kept inside the selected workspace. The current AppImage backend still expects a prepared AppDir, and backend-specific toolchains must already be installed. Progress is currently indeterminate rather than percentage-based.
+
+## Packaging engine (Phase 7)
+
+The packaging core currently exposes explicit, inspectable packaging plans through `vibe_code.packaging.PackagingEngine`:
+
+- **Python / PyInstaller**: one-file or one-folder bundles; requires PyInstaller to be installed in the IDE's Python environment and an explicit workspace-relative entrypoint.
+- **C/C++ / CPack**: ZIP, TGZ, DEB, RPM, NSIS, IFW, DragNDrop, or productbuild when the project generated `.vibe-code/build/cmake/CPackConfig.cmake` and the corresponding CPack generator is installed.
+- **Linux / AppImage**: wraps an existing AppDir containing a root-level `.desktop` file and PNG icon; requires `appimagetool`.
+- **Java / jpackage**: portable `app-image` output from a runnable JAR with a `Main-Class` manifest; requires a full JDK.
+
+Example (Python):
+
+```python
+from pathlib import Path
+from vibe_code.packaging import PackageRequest, PackagingEngine
+
+engine = PackagingEngine(Path("/path/to/workspace"))
+plan = engine.create_plan(PackageRequest(
+    backend="pyinstaller",
+    name="MyDesktopApp",
+    entrypoint="main.py",
+    one_file=True,
+))
+print(plan.command)  # Review the exact command before execution.
+result = engine.execute(plan, trusted_workspace=True)
+print(result.success, result.output_dir, result.output)
+```
+
+Plan creation is side-effect free. Execution requires an explicit trusted-workspace approval, runs argument arrays with `shell=False`, captures diagnostics, and has a bounded timeout. Only plans issued by the same engine instance can be executed; output and entrypoint paths are confined to the workspace. Project build hooks and packaging configuration are still executable code, so only package workspaces you trust.
+
+AppImage generation currently expects the project or user to prepare the AppDir first; it does not yet assemble one from a PyInstaller folder. This phase adds the packaging backend API and tests. A non-blocking Qt packaging workflow with live output and cancellation is now available. Percentage-based progress, installer-specific configuration, signing, and release publishing remain future work. No package is built automatically when a workspace is opened.
+
+
+## AI edit selection (Phase 12)
+
+Select code in the integrated editor and choose **AI Edit Selection**. Enter an instruction; the provider receives the selected range plus a bounded amount of surrounding file context and must return a structured replacement. The proposal is shown as a unified diff before any write. **Apply Edit** records the accepted full-file change through the existing change manager, so it appears in the Changes panel and can be rolled back.
+
+The proposal service does not write files. Invalid provider output is rejected, edits are limited to the existing 2 MiB editor file cap (and 256 KiB selection cap), and the UI discards a proposal if the editor or on-disk file changed while the model was working. The final write also checks the original SHA-256 before recording the change. The feature edits only the selected range in one file; it does not run generated code or silently modify neighboring files.
+
+
+## AI selection insights (Phase 13)
+
+The editor now offers three read-only actions for selected code: **Explain Selection**, **Find Bugs**, and **Suggest Improvements**. Each request includes the selected text and up to 20 nearby lines before and after it. Results appear in a separate read-only dialog; this workflow does not write files, run code, or expose workspace tools to the analysis request.
+
+The analysis service accepts only the three supported task types, treats source text as untrusted input, limits the selection to 256 KiB, bounds surrounding context, and rejects empty or oversized model responses. AI findings are suggestions, not proof that a defect exists or that the code is secure.
+
+
+## AI chat about selection (Phase 14)
+
+Select a range in the integrated editor and choose **Ask AI about Selection**. A dedicated conversation opens with a frozen snapshot of the selected code and up to 20 surrounding lines on either side. Ask follow-up questions without reselecting the source; the snapshot remains fixed for that conversation, so the assistant never silently switches context if the editor changes.
+
+The chat uses the configured provider through the provider-neutral interface, exposes no workspace tools, and runs requests outside the Qt GUI thread. It is read-only: it cannot write files or execute code. Source text is treated as untrusted data rather than instructions. Questions, responses, source size, and retained history are bounded; failed requests do not enter conversation history. AI answers are suggestions and should be checked against the actual project.
+
+
+## Project-wide AI chat (Phase 15)
+
+Use **Chat with Project** in the workspace toolbar to ask questions about the whole project. For each question, the context service ranks relevant files and retrieves a bounded set of source excerpts; follow-up questions retain a bounded conversation history and retrieve context again for the new question. If a source file is open in the editor, it is prioritized as additional context.
+
+This feature is read-only: it exposes no workspace tools and cannot edit files or execute commands. Retrieved project content is treated as untrusted reference data, not instructions. Context discovery skips common generated/dependency folders, symlinks, common secret/config credential filenames and key/certificate file types, and applies file-count, file-size, scan-size, and token-budget limits. These filters reduce accidental disclosure but cannot guarantee that arbitrary credentials embedded in ordinary source files are detected. Relevant source excerpts are sent to the configured AI provider; review provider privacy and data-retention settings before use.
+
+
+## Project-wide AI edits (Phase 16)
+
+Use **Edit Project with AI** in the workspace toolbar and describe a change spanning multiple files. The AI receives bounded, relevance-ranked project context and must return a strict JSON proposal containing complete replacement text for existing files only. The proposal is limited to 10 files, 2 MiB per file and 4 MiB total; targets must be among the retrieved context files.
+
+Every proposed file is shown in a unified diff before anything is written. **Apply Project Changes** is an explicit confirmation; Cancel leaves the workspace unchanged. Before applying, the IDE rechecks every target's path, file type, UTF-8 content and original SHA-256. Accepted changes are stored as one rollback set in the Changes panel. Writes are atomic per file, with best-effort restoration if a later write or history save fails; this is not a filesystem-wide atomic transaction. AI has no tools and cannot run commands in this workflow. Full contents of the selected relevant text files (within a 24K-character context cap) are sent to the configured provider. Filename filters reduce accidental secret disclosure but cannot detect credentials embedded in ordinary source files; review provider privacy and data-retention settings before use.
+
+
+## Project validation and reviewed AI repair (Phase 17)
+
+After an AI project-edit proposal is reviewed, **Apply & Validate** can run the detected test suite, build the project, and perform a short preview-start smoke check. Validation is opt-in: enable the workspace-trust checkbox and confirm the execution prompt first. Tests and build hooks can execute project-controlled code, so only validate workspaces you trust.
+
+Known test commands are selected from project manifests (Python/pytest, Cargo, Go, .NET, Maven, Gradle, and npm). CMake projects run CTest after a successful build when the top-level CMake file declares enable_testing() or includes CTest. If no supported test setup is detected, the test step is explicitly reported as skipped; build and preview checks still run. Missing test runners and failing tests are reported as failures rather than silently ignored. Commands use argument arrays with shell=False, a bounded test timeout, captured output, and no automatic dependency installation.
+
+If tests, build, or preview startup fail, the diagnostics are shown in the editor dialog. **Ask AI for Fix** sends the bounded diagnostics with the current project context and requests a new full-file proposal. The repair appears as another unified diff; it is not applied automatically. The user must review and choose **Apply & Validate** again. Each accepted repair is separately recorded in the Changes panel and can be rolled back. Validation success leaves the preview running when it survives the startup window; the main window then resumes preview log capture.
+
+This is a startup smoke check, not a full GUI interaction or long-duration health test. The app does not claim that skipped tests passed, and a process that exits cleanly during the startup window is distinguished from a crash. Test/build execution is not sandboxed; workspace trust is an explicit user responsibility.
+
+
+## AI debugger (Phase 18)
+
+After a failed validation, **Debug with AI** extracts source locations from common Python traceback, compiler, Rust, Java and .NET diagnostic formats. A location is included only when it resolves to an existing, eligible text source file inside the current workspace; symlinked, outside, missing, sensitive, unsupported and oversized files are excluded. A small surrounding excerpt is supplied with the bounded validation output to help the model correlate the failure with the code.
+
+Common inline credential patterns are redacted before diagnostics are sent to the configured AI provider. This is best-effort redaction, not a guarantee that logs contain no secrets; inspect provider privacy settings and avoid sharing sensitive workspaces. Logs and source excerpts are untrusted data. The debugger only prepares a reviewed project-edit proposal: it does not apply changes or execute commands. Review the diff and explicitly choose **Apply & Validate** to accept and re-run validation.
+
+## Request enhancement
+
+The **Enhance** action uses the configured AI provider and relevant project context to expand a rough idea into a structured implementation brief. It preserves explicit user intent, distinguishes suggestions from approved requirements, and returns the brief to the prompt editor for review. It does not start coding; the user reviews or edits the result and explicitly presses **Run Agent**.
+
+Enhancement is deliberately a separate, tool-free provider request. It cannot call filesystem, terminal, preview, or other agent tools.
+
+
+## Continue checkpoints
+
+The **Continue** button restores the last saved task brief from `.vibe-code/task_state.json`. It includes the original request and the last agent report, then asks the agent to inspect the current workspace/change history before deciding what remains. This is a task checkpoint, not a serialized provider conversation; the agent reconstructs context from current files rather than replaying stale tool calls.
+
+## Skills
+
+Skills are Markdown `SKILL.md` files. Built-in skills cover desktop UI quality, debugging, testing, security, and safe refactoring. Workspace-specific skills can be added under `.vibe-code/skills/<skill-name>/SKILL.md`. The skill loader reads candidate metadata and only injects a small number of relevant skills into the context.
+
+## Coding templates
+
+Use **Templates…** in the workspace toolbar to preview and apply the built-in Python/PySide6 starter. The picker lists target files and identifies collisions before applying anything. Applying is a separate confirmation step; existing files are skipped by default and are never overwritten unless the caller explicitly opts in. Template paths are validated to prevent traversal and symlink-based writes. The packaged built-in template is available in source checkouts and installed builds.
