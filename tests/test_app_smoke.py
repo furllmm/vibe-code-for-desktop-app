@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication
 
@@ -9,6 +10,13 @@ from vibe_code.app import MainWindow
 from vibe_code.workspace import Workspace
 
 _APP = QApplication.instance() or QApplication([])
+
+
+def _dispose(window: MainWindow) -> None:
+    window.close()
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    _APP.processEvents()
 
 
 def test_main_window_constructs_and_exposes_core_actions():
@@ -20,7 +28,7 @@ def test_main_window_constructs_and_exposes_core_actions():
         assert window.enhance_button.text() == "Enhance"
         assert not window.continue_button.isEnabled()
     finally:
-        window.close()
+        _dispose(window)
 
 
 def test_main_window_loads_workspace_without_errors(tmp_path):
@@ -34,4 +42,4 @@ def test_main_window_loads_workspace_without_errors(tmp_path):
         window.refresh_context()
         assert window.project_tree.topLevelItemCount() >= 1
     finally:
-        window.close()
+        _dispose(window)

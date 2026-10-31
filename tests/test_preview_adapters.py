@@ -1,3 +1,4 @@
+import os
 import json
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def test_rust_adapter_detects_and_resolves_target(tmp_path: Path):
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "hello-world"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    executable = tmp_path / "target" / "debug" / "hello-world"
+    executable = tmp_path / "target" / "debug" / ("hello-world.exe" if os.name == "nt" else "hello-world")
     executable.parent.mkdir(parents=True)
     executable.write_text("", encoding="utf-8")
     adapter = RustCargoAdapter()

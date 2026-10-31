@@ -68,7 +68,7 @@ def make_dialog(tmp_path, validator):
     original = "print('before')\n"
     first = "print('first')\n"
     second = "print('repaired')\n"
-    (tmp_path / "main.py").write_text(original)
+    (tmp_path / "main.py").write_bytes(original.encode())
     provider = FakeProvider([
         make_response(original, first),
         make_response(first, second),

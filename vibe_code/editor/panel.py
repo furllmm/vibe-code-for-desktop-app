@@ -280,7 +280,7 @@ class EditorPanel(QWidget):
         editor._workspace_path = resolved
         editor._disk_hash = hashlib.sha256(raw).hexdigest()
         editor.setPlainText(content)
-        CodeHighlighter(editor.document(), resolved.suffix.lower())
+        editor._highlighter = CodeHighlighter(editor.document(), resolved.suffix.lower())
         editor.document().modificationChanged.connect(
             lambda _modified, widget=editor: self._update_tab_title(widget)
         )

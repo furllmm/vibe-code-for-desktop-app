@@ -24,7 +24,7 @@ def test_detects_pyside6_requirement_and_explicit_entrypoint(tmp_path: Path) -> 
     adapter = PythonPySide6Adapter("src/desktop.py")
 
     assert adapter.detect(tmp_path)
-    assert adapter.command(tmp_path)[-1].endswith("src/desktop.py")
+    assert Path(adapter.command(tmp_path)[-1]).as_posix().endswith("src/desktop.py")
 
 
 def test_rejects_entrypoint_escape(tmp_path: Path) -> None:

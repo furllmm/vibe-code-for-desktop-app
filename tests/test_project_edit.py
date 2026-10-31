@@ -35,7 +35,7 @@ def proposal(path, original, updated):
 
 def setup_workspace(tmp_path):
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "main.py").write_text("print('hello')\n")
+    (tmp_path / "src" / "main.py").write_bytes(b"print('hello')\n")
     return Workspace(tmp_path)
 
 
