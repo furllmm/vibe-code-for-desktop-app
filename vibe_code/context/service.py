@@ -2,24 +2,19 @@ from __future__ import annotations
 
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ..index import ProjectIndex, ProjectIndexer
 from ..index.indexer import IGNORED_DIRS, FileIndex
+from ..security import is_sensitive_path, redact_secrets
 from .models import ContextItem, ContextPack, ContextRequest
+from .settings import ContextSettings, estimate_tokens
 
 _IGNORE_DIRS = set(IGNORED_DIRS)
 _RELATED_BOOST = 6.0
 _RELATED_SEEDS = 5
 _MAX_CONTEXT_FILES = 20_000
 _MAX_CONTEXT_SCAN_BYTES = 256 * 1024 * 1024
-_SENSITIVE_NAMES = {
-    ".env", ".env.local", ".env.production", ".env.development",
-    "secrets", "secrets.json", "secrets.yaml", "secrets.yml",
-    "credentials", "credentials.json", "credentials.yaml", "credentials.yml",
-    "id_rsa", "id_ed25519",
-}
-_SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"}
 _TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".yaml", ".yml",
     ".md", ".txt", ".ini", ".cfg", ".xml", ".ui", ".qml", ".cs", ".cpp",
@@ -39,6 +34,7 @@ class ContextService:
             raise ValueError("token_budget must be greater than zero")
 
         root = request.workspace.expanduser().resolve()
+        settings = ContextSettings.load(root)
         focus_paths = {p.expanduser().resolve() for p in request.focus_paths}
         project_index = self._build_index(root)
         self.last_index = project_index
@@ -48,25 +44,39 @@ class ContextService:
         recent_paths = self._recent_paths(root)
         scored = [
             self._score_metadata(path, request.prompt, focus_paths, index.get(path.resolve()), recent_paths)
-            for path in self._discover(root)
+            for path in self._discover(root, settings)
         ]
         if project_index is not None:
             scored = self._apply_graph_signals(root, scored, project_index)
         scored.sort(key=lambda item: (-item.score, str(item.path)))
 
-        budget_chars = request.token_budget * 4
         used = 0
+        redactions = 0
         selected: list[ContextItem] = []
+        rules = settings.load_rules(root)
+        if rules is not None:
+            rules_path, rules_text = rules
+            cost = estimate_tokens(rules_text)
+            if cost <= request.token_budget // 4:
+                selected.append(ContextItem(rules_path, "metadata", 1000.0, "project coding rules", rules_text))
+                used += cost
         for item in scored:
-            item = self._materialize(item, self._read(item.path))
-            size = len(item.content or "")
-            if size == 0 or used + size > budget_chars:
+            text, replaced = redact_secrets(self._read(item.path))
+            item = self._materialize(item, text)
+            cost = estimate_tokens(item.content or "")
+            if cost == 0 or used + cost > request.token_budget:
                 continue
+            if replaced and item.content and "[REDACTED]" in item.content:
+                item = ContextItem(
+                    item.path, item.kind, item.score, f"{item.reason}, secrets redacted",
+                    item.content, item.start_line, item.end_line,
+                )
+                redactions += item.content.count("[REDACTED]")
             selected.append(item)
-            used += size
+            used += cost
 
         summary = project_index.stats.summary() if project_index is not None else ""
-        return ContextPack(tuple(selected), used // 4, summary)
+        return ContextPack(tuple(selected), used, summary, redactions, settings.errors)
 
     def _build_index(self, root: Path) -> ProjectIndex | None:
         build_index = getattr(self._indexer, "build_index", None)
@@ -110,7 +120,8 @@ class ContextService:
             ))
         return result
 
-    def _discover(self, root: Path) -> list[Path]:
+    def _discover(self, root: Path, settings: ContextSettings | None = None) -> list[Path]:
+        settings = settings or ContextSettings()
         paths: list[Path] = []
         scanned_bytes = 0
         for path in root.rglob("*"):
@@ -122,17 +133,7 @@ class ContextService:
                 continue
             if any(part in _IGNORE_DIRS for part in relative.parts):
                 continue
-            lower_name = path.name.lower()
-            if (
-                lower_name in _SENSITIVE_NAMES
-                or lower_name.startswith(".env")
-                or path.suffix.lower() in _SENSITIVE_SUFFIXES
-                or any(
-                    marker in lower_name
-                    for marker in ("secret", "credential", "password", "private_key", "api_key", "access_token")
-                )
-                or any(part.lower() in {"secrets", "credentials", "private_keys"} for part in relative.parts[:-1])
-            ):
+            if is_sensitive_path(relative) or settings.is_excluded(PurePosixPath(relative.as_posix())):
                 continue
             if path.suffix.lower() not in _TEXT_EXTENSIONS:
                 continue

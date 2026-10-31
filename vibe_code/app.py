@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+from dataclasses import replace
 import hashlib
 import html
 import os
@@ -41,6 +42,8 @@ from vibe_code.context.models import ContextItem, ContextPack, ContextRequest
 from vibe_code.context.panel import ContextPanel
 from vibe_code.index.panel import IndexPanel
 from vibe_code.context.service import ContextService
+from vibe_code.context.settings import ContextSettings, estimate_tokens
+from vibe_code.providers.base import ProviderError
 from vibe_code.chat import ProjectChatSession
 from vibe_code.chat.dialog import ProjectChatDialog
 from vibe_code.editor.project_edit import ProjectEditSession
@@ -122,6 +125,9 @@ class MainWindow(QMainWindow):
         workspace_search_action.setShortcut("Ctrl+Shift+F")
         workspace_search_action.triggered.connect(self.show_workspace_search)
         toolbar.addAction(workspace_search_action)
+        provider_test_action = QAction("Test Provider", self)
+        provider_test_action.triggered.connect(self.test_provider_connection)
+        toolbar.addAction(provider_test_action)
         templates_action = QAction("Templates…", self)
         templates_action.triggered.connect(self.open_template_picker)
         toolbar.addAction(templates_action)
@@ -484,14 +490,16 @@ class MainWindow(QMainWindow):
         pack = self._build_context(prompt)
         self.context_panel.show_pack(pack)
         self.index_panel.show_index(self.context_service.last_index)
-        self.statusBar().showMessage(f"Context: {pack.summary()}")
+        warnings = f" — {'; '.join(pack.warnings)}" if pack.warnings else ""
+        self.statusBar().showMessage(f"Context: {pack.summary()}{warnings}")
 
 
     def _build_context(self, prompt: str) -> ContextPack:
         if self.workspace is None:
             raise ValueError("Open a workspace first")
+        settings = ContextSettings.load(self.workspace.root)
         pack = self.context_service.build(
-            ContextRequest(prompt, self.workspace.root, token_budget=12000)
+            ContextRequest(prompt, self.workspace.root, token_budget=settings.token_budget)
         )
         skills = self.skill_service.load_for_prompt(self.workspace.root, prompt)
         if not skills:
@@ -506,8 +514,9 @@ class MainWindow(QMainWindow):
             )
             for skill in skills
         )
-        skill_tokens = sum(len(item.content or "") for item in skill_items) // 4
-        return ContextPack(
+        skill_tokens = sum(estimate_tokens(item.content or "") for item in skill_items)
+        return replace(
+            pack,
             items=pack.items + skill_items,
             estimated_tokens=pack.estimated_tokens + skill_tokens,
         )
@@ -1025,6 +1034,16 @@ class MainWindow(QMainWindow):
         return OpenAICompatibleProvider(
             OpenAICompatibleConfig(base_url, model, api_key, timeout)
         )
+
+    def test_provider_connection(self) -> None:
+        try:
+            provider = self._build_provider()
+            message = provider.test_connection()
+        except (ValueError, ProviderError) as exc:
+            QMessageBox.warning(self, "Provider connection failed", str(exc))
+            return
+        QMessageBox.information(self, "Provider connection", message)
+        self.statusBar().showMessage(message)
 
     def _agent_finished(self, result: object) -> None:
         if isinstance(result, OrchestrationResult):

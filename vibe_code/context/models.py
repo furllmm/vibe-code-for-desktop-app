@@ -37,6 +37,8 @@ class ContextPack:
     items: tuple[ContextItem, ...]
     estimated_tokens: int
     index_summary: str = ""
+    redactions: int = 0
+    warnings: tuple[str, ...] = ()
 
     def as_text(self) -> str:
         sections: list[str] = []
@@ -50,7 +52,7 @@ class ContextPack:
         return "\n\n".join(sections)
 
     def summary(self) -> str:
-        return (
-            f"{len(self.items)} context items, "
-            f"~{self.estimated_tokens} estimated tokens"
-        )
+        text = f"{len(self.items)} context items, ~{self.estimated_tokens} estimated tokens"
+        if self.redactions:
+            text += f", {self.redactions} secrets redacted"
+        return text

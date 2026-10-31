@@ -1,6 +1,15 @@
 """AI provider abstraction and concrete adapters."""
 
-from .base import AgentMessage, AIProvider, ProviderRequest, ProviderResponse, ToolCall
+from .base import (
+    AgentMessage,
+    AIProvider,
+    ProviderCancelled,
+    ProviderError,
+    ProviderRequest,
+    ProviderResponse,
+    TokenUsage,
+    ToolCall,
+)
 from .openai_compatible import OpenAICompatibleConfig, OpenAICompatibleProvider
 
 __all__ = [
@@ -8,7 +17,10 @@ __all__ = [
     "AIProvider",
     "OpenAICompatibleConfig",
     "OpenAICompatibleProvider",
+    "ProviderCancelled",
+    "ProviderError",
     "ProviderRequest",
     "ProviderResponse",
+    "TokenUsage",
     "ToolCall",
 ]
